@@ -1,57 +1,133 @@
-# Discord 인턴 쉬는시간 알리미
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/09febae6-d3f0-49c6-a6d5-4757de0a172d"
+       alt="image"
+       width="550">
+</p>
 
-## 켜기 / 끄기
+# Discord Work Rhythm Reminder
 
-`src/schedule.js`에서:
+Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전송**하는 서버리스 프로젝트입니다.
 
-```js
-enabled: true,
+출근, 쉬는시간, 점심시간, 스크럼, 퇴근 등 반복되는 업무 일정을 Discord 채널로 자동 안내합니다.
+
+## ✨ 주요 기능
+
+* 🌞 출근 알림
+* ☕ 쉬는시간 알림
+* 🍱 점심시간 알림
+* ⏰ 점심 종료 안내
+* 📋 스크럼 링크 안내
+* 🎉 퇴근 알림
+* 📅 요일별 실행
+* 📆 기간(Start/End Date) 설정
+* ✅ 알림별 ON/OFF
+* 📢 여러 Discord Webhook 동시 전송
+* 🧪 테스트 메시지 전송(`/test`)
+
+## 🛠 Tech Stack
+
+* JavaScript (ES Modules)
+* Cloudflare Workers
+* Cloudflare Cron Triggers
+* Discord Webhook
+
+## 📁 프로젝트 구조
+
+```text
+.
+├── src/
+│   ├── index.js          # Worker 진입점
+│   ├── schedule.js       # 알림 일정 및 메시지
+│   └── ...
+├── package.json
+├── wrangler.jsonc
+└── README.md
 ```
 
-를
+## 🚀 실행 방법
 
-```js
-enabled: false,
+### 1. 설치
+
+```bash
+npm install
 ```
 
-로 바꾸면 해당 알림만 꺼집니다.
+### 2. Cloudflare 로그인
 
-## 전체 기간 변경
-
-각 알림의 아래 날짜를 바꿉니다.
-
-```js
-startDate: "2026-07-06",
-endDate: "2026-07-31",
+```bash
+npx wrangler login
 ```
 
-예를 들어 8월 14일까지 연장하려면:
+### 3. Discord Webhook 등록
 
-```js
-endDate: "2026-08-14",
+```bash
+npx wrangler secret put DISCORD_WEBHOOK_URLS
 ```
 
-## 시간 변경
+예시(JSON 배열)
 
-```js
-time: "15:48",
+```json
+[
+  "https://discord.com/api/webhooks/...",
+  "https://discord.com/api/webhooks/..."
+]
 ```
 
-형식은 24시간제 `HH:MM`입니다.
+### 4. 배포
 
-## 반영 방법
-
-수정 후 프로젝트 폴더에서:
-
-```powershell
+```bash
 npm run deploy
 ```
 
-기존 Worker가 같은 주소로 업데이트됩니다.
+## ⚙️ 일정 설정
 
-## 전체 알림을 잠시 끄는 가장 쉬운 방법
+알림은 `schedule.js`에서 관리합니다.
 
-모든 항목의 `enabled`를 `false`로 바꾼 뒤 다시 배포합니다.
+예시
 
-또는 Cloudflare 대시보드에서 Worker의 Cron Trigger를 제거할 수도 있지만,
-나중에 다시 켜기 쉽게 하려면 `enabled: false` 방식이 더 편합니다.
+```javascript
+{
+  name: "Morning",
+  enabled: true,
+  startDate: "2026-07-06",
+  endDate: "2026-07-31",
+  days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  time: "09:00",
+  message: "🌞 좋은 아침입니다!"
+}
+```
+
+수정 후에는 다시 배포합니다.
+
+```bash
+npm run deploy
+```
+
+## 🧪 테스트
+
+배포된 Worker 주소 뒤에 `/test`를 붙이면 테스트 메시지를 전송합니다.
+
+```text
+https://<worker>.workers.dev/test
+```
+
+## 📌 향후 계획
+
+* 전체 알림 일괄 ON/OFF
+* 알림 그룹별 ON/OFF
+* 채널별 선택 전송
+* Notion API 연동
+* 공휴일 자동 제외
+* 웹 기반 설정 화면
+
+## 💡 개발 배경
+
+장시간 원격 근무 중 쉬는시간과 점심시간을 자주 놓치는 경험에서 시작한 프로젝트입니다.
+
+로컬 프로그램 대신 Cloudflare Workers를 사용하여 **컴퓨터가 꺼져 있어도** 알림이 계속 동작하도록 구현했습니다.
+
+또한 일정별 활성화, 기간 제한, 다중 Discord 채널 전송 등을 지원해 개인 및 팀 프로젝트에서 함께 사용할 수 있도록 설계했습니다.
+
+## License
+
+MIT
