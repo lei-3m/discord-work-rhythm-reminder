@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "discord-break-reminder",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-13",
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "WEBHOOK_NAME": "쉬는시간 알리미"
+  }
+}
