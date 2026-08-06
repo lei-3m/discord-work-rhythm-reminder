@@ -89,15 +89,6 @@ export const SCHEDULE = [
     message: "☕ **쉬는시간이에요!**\n잠깐 자리에서 일어나 몸을 풀고, 물도 한 잔 마셔요.",
   },
   {
-    name: "오후 5시 스크럼 시간",
-    enabled: true,
-    startDate: "2026-07-06",
-    endDate: "2026-08-08",
-    days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-    time: "17:00",
-    message: "☕ **쉬는시간이에요!**\n잠깐 자리에서 일어나 몸을 풀고, 물도 한 잔 마셔요.",
-  },
-  {
     name: "퇴근 알림",
     enabled: true,
     startDate: "2026-07-06",
