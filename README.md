@@ -97,6 +97,14 @@ npm run deploy
 }
 ```
 
+전체 알림을 한 번에 끄려면 `schedule.js`의 전역 설정을 변경합니다.
+
+```javascript
+export const GLOBAL_SETTINGS = {
+  enabled: false, // 개별 enabled 값과 무관하게 모든 알림 중단
+};
+```
+
 수정 후에는 다시 배포합니다.
 
 ```bash
@@ -113,7 +121,6 @@ https://<worker>.workers.dev/test
 
 ## 📌 향후 계획
 
-* 전체 알림 일괄 ON/OFF
 * 알림 그룹별 ON/OFF
 * 채널별 선택 전송
 * Notion API 연동
