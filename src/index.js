@@ -37,11 +37,15 @@ function getScheduledMessage(date = new Date()) {
   const now = getKoreanNow(date);
 
   const item = SCHEDULE.find(
-    (entry) =>
-      entry.enabled === true &&
-      entry.days.includes(now.weekday) &&
-      entry.time === now.time &&
-      isWithinDateRange(now.date, entry.startDate, entry.endDate)
+      (entry) =>
+          entry.enabled === true &&
+          entry.days.includes(now.weekday) &&
+          entry.time === now.time &&
+          isWithinDateRange(
+              now.date,
+              entry.startDate ?? GLOBAL_SETTINGS.defaultPeriod?.startDate,
+              entry.endDate ?? GLOBAL_SETTINGS.defaultPeriod?.endDate
+          )
   );
 
   return item?.message ?? null;
