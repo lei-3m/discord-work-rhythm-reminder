@@ -96,12 +96,30 @@ if (!GLOBAL_SETTINGS.enabled) {
 ```
 
 ### 4.4 기간 제한
-`startDate`, `endDate`를 통해 특정 기간에만 알림이 동작한다.
+
+기본 기간은 `GLOBAL_SETTINGS.defaultPeriod`에서 관리한다.
 
 ```js
-startDate: "2026-07-06",
-endDate: "2026-07-31",
+export const GLOBAL_SETTINGS = {
+  enabled: true,
+  defaultPeriod: {
+    startDate: "2026-07-06",
+    endDate: "2026-08-15",
+  },
+};
 ```
+
+개별 알림에 `startDate`, `endDate`가 있으면 그 값이 우선하고, 없으면 전역 기본값을 사용한다.
+
+```js
+entry.startDate ?? GLOBAL_SETTINGS.defaultPeriod.startDate
+```
+
+전역 ON/OFF(4.3)는 개별 `enabled`를 덮어쓰지만, 기간은 반대로 개별 설정이 우선한다.
+스위치는 즉시 중단을 위한 장치이고, 기간은 반복 입력을 줄이기 위한 기본값이기 때문이다.
+
+초기에는 모든 알림에 기간을 개별로 적었으나, 기간 연장 시 전체 알림을 수정해야 해
+공통 기본값과 개별 예외를 분리했다.
 
 종료일이 지나면 Worker는 계속 실행되지만 메시지는 전송하지 않는다.
 
@@ -133,6 +151,20 @@ Cloudflare Secret `DISCORD_WEBHOOK_URLS`에 여러 웹훅 URL을 JSON 배열로 
 ```text
 https://<worker-address>.workers.dev/test
 ```
+
+### 4.8 메시지 환경 변수 치환
+
+메시지 안의 `{{변수명}}`은 전송 직전 환경 변수 값으로 치환된다.
+
+```js
+message: "🌅 좋은 아침입니다!\n오늘 공지 확인 👉 {{NOTION_URL}}"
+```
+
+Notion 링크처럼 저장소에 남기고 싶지 않은 값을 설정 파일에서 분리하기 위한 기능이다.
+링크 자체는 Discord 메시지에 정상적으로 표시되며, 저장소에는 자리표시자만 남는다.
+
+미등록 변수는 치환되지 않고 `{{NOTION_URL}}` 형태로 그대로 전송된다.
+값이 조용히 비어 전달되는 것보다 누락을 즉시 인지할 수 있어 의도한 동작이다.
 
 ## 5. 현재 알림 구성안
 

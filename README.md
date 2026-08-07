@@ -22,6 +22,7 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 * 📆 기간(Start/End Date) 설정
 * ✅ 알림별 ON/OFF
 * 📢 여러 Discord Webhook 동시 전송
+* 🔤 환경 변수 기반 메시지 치환(`{{NOTION_URL}}`)
 * 🧪 테스트 메시지 전송(`/test`)
 
 ## 🛠 Tech Stack
@@ -73,37 +74,91 @@ npx wrangler secret put DISCORD_WEBHOOK_URLS
 ]
 ```
 
-### 4. 배포
+### 4. 메시지 환경 변수 등록
+
+메시지 안의 링크처럼 저장소에 남기고 싶지 않은 값은 환경 변수로 관리합니다.
+
+```bash
+npx wrangler secret put NOTION_URL
+```
+
+기본 일정 중 **출근 알림**이 `{{NOTION_URL}}`을 사용하므로, 등록하지 않으면 메시지에 `{{NOTION_URL}}` 문자열이 그대로 전송됩니다.
+
+| 변수                     | 필수 | 설정 위치            | 설명                                    |
+|------------------------|----|------------------|---------------------------------------|
+| `DISCORD_WEBHOOK_URLS` | ✅  | 시크릿              | 전송할 Discord Webhook URL의 JSON 배열      |
+| `NOTION_URL`           | ✅  | 시크릿              | 출근 알림에 첨부되는 스크럼 노션 문서 주소              |
+| `WEBHOOK_NAME`         | ⬜  | `wrangler.jsonc` | Discord에 표시될 발신자 이름 (기본값: `쉬는시간 알리미`) |
+
+### 5. 배포
 
 ```bash
 npm run deploy
 ```
 
+## 🔤 메시지 템플릿
+
+메시지 안의 `{{변수명}}`은 전송 직전에 같은 이름의 환경 변수 값으로 치환됩니다.
+
+```javascript
+{
+  name: "출근 알림",
+  message: "📋 스크럼\n{{NOTION_URL}}",
+}
+```
+
+새로운 값을 쓰려면 메시지에 `{{MY_LINK}}`처럼 적고 시크릿을 등록하면 됩니다.
+
+```bash
+npx wrangler secret put MY_LINK
+```
+
+해당 이름의 환경 변수가 없으면 치환되지 않고 `{{MY_LINK}}`가 그대로 남습니다.
+
 ## ⚙️ 일정 설정
 
 알림은 `schedule.js`에서 관리합니다.
 
-예시
+알림 기간은 `GLOBAL_SETTINGS.defaultPeriod`에서 한 번만 정하고, 각 일정은 날짜를 생략해 이 값을 물려받습니다.
+
+```javascript
+export const GLOBAL_SETTINGS = {
+  enabled: true, // false면 개별 enabled 값과 무관하게 모든 알림 중단
+  defaultPeriod: {
+    startDate: "2026-07-06",
+    endDate: "2026-08-15",
+  },
+};
+```
+
+기본 형태 — 날짜 없이 씁니다.
 
 ```javascript
 {
-  name: "Morning",
+  name: "출근 알림",
   enabled: true,
-  startDate: "2026-07-06",
-  endDate: "2026-07-31",
   days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
   time: "09:00",
   message: "🌞 좋은 아침입니다!"
 }
 ```
 
-전체 알림을 한 번에 끄려면 `schedule.js`의 전역 설정을 변경합니다.
+기본 기간과 다르게 동작해야 하는 예외 일정에만 날짜를 직접 적습니다.
 
 ```javascript
-export const GLOBAL_SETTINGS = {
-  enabled: false, // 개별 enabled 값과 무관하게 모든 알림 중단
-};
+{
+  name: "신입 온보딩 안내",
+  enabled: true,
+  endDate: "2026-07-17", // startDate는 defaultPeriod 값을 그대로 사용
+  days: ["Mon"],
+  time: "10:00",
+  message: "📗 온보딩 문서를 확인해주세요!"
+}
 ```
+
+**우선순위:** `startDate`와 `endDate`는 각각 따로 판정되며, 일정에 값이 있으면 그 값을, 없으면 `defaultPeriod`의 값을 사용합니다.
+
+즉 위 예시처럼 `endDate`만 덮어쓰면 `startDate`는 여전히 `defaultPeriod`를 따릅니다. `null`을 넣어도 폴백이 적용되므로, 특정 일정만 기간 제한 없이 돌리려면 `defaultPeriod` 자체를 비워야 합니다.
 
 수정 후에는 다시 배포합니다.
 
