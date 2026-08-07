@@ -16,7 +16,7 @@ export const SCHEDULE = [
             "🌞 **좋은 아침입니다!**\n" +
             "오늘도 화이팅! 💪\n\n" +
             "📋 스크럼\n" +
-            "https://app.notion.com/p/1311f9e3eeaa83fc87ab0135c8693e58",
+            "{{NOTION_URL}}",
     },
     {
         name: "오전 첫 쉬는시간",
