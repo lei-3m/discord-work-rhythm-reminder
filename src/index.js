@@ -1,4 +1,4 @@
-import {GLOBAL_SETTINGS, SCHEDULE} from "./schedule.js";
+import {GLOBAL_SETTINGS, SCHEDULE} from "./schedule/index.js";
 
 function getKoreanNow(date = new Date()) {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -29,14 +29,14 @@ function isWithinDateRange(date, startDate, endDate) {
     return true;
 }
 
-function getScheduledMessage(date = new Date()) {
+function getScheduledItems(date = new Date()) {
     if (!GLOBAL_SETTINGS.enabled) {
-        return null;
+        return [];
     }
 
     const now = getKoreanNow(date);
 
-    const item = SCHEDULE.find(
+    return SCHEDULE.filter(
         (entry) =>
             entry.enabled === true &&
             entry.days.includes(now.weekday) &&
@@ -47,20 +47,53 @@ function getScheduledMessage(date = new Date()) {
                 entry.endDate ?? GLOBAL_SETTINGS.defaultPeriod?.endDate
             )
     );
-
-    return item?.message ?? null;
 }
 
 function parseWebhookUrls(raw) {
     if (!raw) throw new Error("DISCORD_WEBHOOK_URLS secret is missing.");
 
-    const urls = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
 
-    if (!Array.isArray(urls) || urls.length === 0) {
-        throw new Error("DISCORD_WEBHOOK_URLS must be a non-empty JSON array.");
+    if (Array.isArray(parsed)) {
+        if (parsed.length === 0) {
+            throw new Error("DISCORD_WEBHOOK_URLS must be a non-empty JSON array.");
+        }
+
+        return Object.fromEntries(
+            parsed.map((url, index) => [String(index), url])
+        );
     }
 
-    return urls;
+    if (parsed && typeof parsed === "object") {
+        if (Object.keys(parsed).length === 0) {
+            throw new Error("DISCORD_WEBHOOK_URLS must be a non-empty JSON object.");
+        }
+
+        return parsed;
+    }
+
+    throw new Error("DISCORD_WEBHOOK_URLS must be a JSON object or array.");
+}
+
+function selectWebhooks(webhooks, targets) {
+    if (!Array.isArray(targets) || targets.length === 0) {
+        return Object.values(webhooks);
+    }
+
+    const selected = [];
+
+    for (const target of targets) {
+        const url = webhooks[target];
+
+        if (!url) {
+            console.error(`Unknown webhook target: "${target}"`);
+            continue;
+        }
+
+        selected.push(url);
+    }
+
+    return selected;
 }
 
 async function sendWebhook(url, content, username) {
@@ -88,8 +121,15 @@ function renderMessage(template, env) {
     );
 }
 
-async function sendToAll(env, message) {
-    const urls = parseWebhookUrls(env.DISCORD_WEBHOOK_URLS);
+async function sendToAll(env, message, targets) {
+    const webhooks = parseWebhookUrls(env.DISCORD_WEBHOOK_URLS);
+    const urls = selectWebhooks(webhooks, targets);
+
+    if (urls.length === 0) {
+        console.error("No matching webhook target. Nothing sent.");
+        return;
+    }
+
     const username = env.WEBHOOK_NAME || "쉬는시간 알리미";
     const content = renderMessage(message, env);
 
@@ -109,12 +149,10 @@ async function sendToAll(env, message) {
 
 export default {
     async scheduled(controller, env, ctx) {
-        const message = getScheduledMessage(
-            new Date(controller.scheduledTime)
-        );
+        const items = getScheduledItems(new Date(controller.scheduledTime));
 
-        if (message) {
-            ctx.waitUntil(sendToAll(env, message));
+        for (const item of items) {
+            ctx.waitUntil(sendToAll(env, item.message, item.targets));
         }
     },
 

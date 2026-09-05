@@ -38,8 +38,11 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 .
 ├── src/
 │   ├── index.js          # Worker 진입점
-│   ├── schedule.js       # 알림 일정 및 메시지
-│   └── ...
+│   └── schedule/
+│       ├── index.js      # 일정 통합 및 re-export
+│       ├── settings.js   # GLOBAL_SETTINGS
+│       ├── team.js       # 팀 알림 일정
+│       └── personal.js   # 개인 알림 일정
 ├── package.json
 ├── wrangler.jsonc
 └── README.md
@@ -65,7 +68,16 @@ npx wrangler login
 npx wrangler secret put DISCORD_WEBHOOK_URLS
 ```
 
-예시(JSON 배열)
+예시(JSON 객체 — 채널 이름을 키로 사용)
+
+```json
+{
+  "personal": "https://discord.com/api/webhooks/...",
+  "team": "https://discord.com/api/webhooks/..."
+}
+```
+
+키 이름은 일정의 `targets`에서 사용합니다. 아래 JSON 배열 형식도 계속 동작하며, 이 경우 모든 웹훅으로 전송됩니다.
 
 ```json
 [
@@ -86,7 +98,7 @@ npx wrangler secret put NOTION_URL
 
 | 변수                     | 필수 | 설정 위치            | 설명                                    |
 |------------------------|----|------------------|---------------------------------------|
-| `DISCORD_WEBHOOK_URLS` | ✅  | 시크릿              | 전송할 Discord Webhook URL의 JSON 배열      |
+| `DISCORD_WEBHOOK_URLS` | ✅  | 시크릿              | 채널 이름별 Discord Webhook URL의 JSON 객체 (배열도 허용) |
 | `NOTION_URL`           | ✅  | 시크릿              | 출근 알림에 첨부되는 스크럼 노션 문서 주소              |
 | `WEBHOOK_NAME`         | ⬜  | `wrangler.jsonc` | Discord에 표시될 발신자 이름 (기본값: `쉬는시간 알리미`) |
 
@@ -117,7 +129,7 @@ npx wrangler secret put MY_LINK
 
 ## ⚙️ 일정 설정
 
-알림은 `schedule.js`에서 관리합니다.
+알림은 `src/schedule/` 폴더에서 관리합니다. 팀 알림은 `team.js`, 개인 알림은 `personal.js`, 전역 설정은 `settings.js`에 있고 `index.js`가 이를 합쳐 `SCHEDULE`로 내보냅니다.
 
 알림 기간은 `GLOBAL_SETTINGS.defaultPeriod`에서 한 번만 정하고, 각 일정은 날짜를 생략해 이 값을 물려받습니다.
 
@@ -159,6 +171,23 @@ export const GLOBAL_SETTINGS = {
 **우선순위:** `startDate`와 `endDate`는 각각 따로 판정되며, 일정에 값이 있으면 그 값을, 없으면 `defaultPeriod`의 값을 사용합니다.
 
 즉 위 예시처럼 `endDate`만 덮어쓰면 `startDate`는 여전히 `defaultPeriod`를 따릅니다. `null`을 넣어도 폴백이 적용되므로, 특정 일정만 기간 제한 없이 돌리려면 `defaultPeriod` 자체를 비워야 합니다.
+
+### 채널별 선택 전송
+
+`targets`에 `DISCORD_WEBHOOK_URLS` 객체의 키를 적으면 해당 웹훅으로만 전송합니다. 생략하면 등록된 모든 웹훅으로 전송합니다.
+
+```javascript
+{
+  name: "팀 스크럼 안내",
+  enabled: true,
+  targets: ["team"], // 생략 시 전체 전송
+  days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  time: "09:00",
+  message: "📋 스크럼 시작합니다!"
+}
+```
+
+`targets`에 없는 이름을 적으면 그 이름만 건너뛰고 `console.error`로 경고를 남깁니다. 같은 시각에 여러 일정이 있으면 모두 각자의 `targets`로 전송됩니다.
 
 수정 후에는 다시 배포합니다.
 
