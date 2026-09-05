@@ -131,46 +131,58 @@ npx wrangler secret put MY_LINK
 
 알림은 `src/schedule/` 폴더에서 관리합니다. 팀 알림은 `team.js`, 개인 알림은 `personal.js`, 전역 설정은 `settings.js`에 있고 `index.js`가 이를 합쳐 `SCHEDULE`로 내보냅니다.
 
-알림 기간은 `GLOBAL_SETTINGS.defaultPeriod`에서 한 번만 정하고, 각 일정은 날짜를 생략해 이 값을 물려받습니다.
+그룹별 기본값은 `settings.js`의 `GLOBAL_SETTINGS.defaults`에 모여 있고, `index.js`가 이를 `withDefaults(items, defaults)`로 주입합니다. 각 일정은 달라지는 값만 적고, 항목에 있는 값이 기본값보다 우선합니다.
+
+| 그룹                  | 기본값                |
+|---------------------|--------------------|
+| `TEAM_SCHEDULE`     | `defaults.team`     |
+| `PERSONAL_SCHEDULE` | `defaults.personal` |
 
 ```javascript
 export const GLOBAL_SETTINGS = {
   enabled: true, // false면 개별 enabled 값과 무관하게 모든 알림 중단
-  defaultPeriod: {
-    startDate: "2026-07-06",
-    endDate: "2026-08-15",
+  defaults: {
+    team: {
+      enabled: true,
+      targets: ["team"],
+      days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      startDate: "2026-07-06",
+      endDate: "2026-09-05",
+    },
+    personal: {
+      enabled: true,
+      targets: ["personal"],
+      days: ["Sat", "Sun"],
+      startDate: null, // null이면 기간 제한 없음
+      endDate: null,
+    },
   },
 };
 ```
 
-기본 형태 — 날짜 없이 씁니다.
+기본 형태 — 이름, 시각, 메시지만 적습니다.
 
 ```javascript
 {
   name: "출근 알림",
-  enabled: true,
-  days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
   time: "09:00",
   message: "🌞 좋은 아침입니다!"
 }
 ```
 
-기본 기간과 다르게 동작해야 하는 예외 일정에만 날짜를 직접 적습니다.
+기본값과 다르게 동작해야 하는 일정에만 해당 필드를 직접 적습니다.
 
 ```javascript
 {
   name: "신입 온보딩 안내",
-  enabled: true,
-  endDate: "2026-07-17", // startDate는 defaultPeriod 값을 그대로 사용
+  endDate: "2026-07-17", // startDate는 defaults.team 값을 그대로 사용
   days: ["Mon"],
   time: "10:00",
   message: "📗 온보딩 문서를 확인해주세요!"
 }
 ```
 
-**우선순위:** `startDate`와 `endDate`는 각각 따로 판정되며, 일정에 값이 있으면 그 값을, 없으면 `defaultPeriod`의 값을 사용합니다.
-
-즉 위 예시처럼 `endDate`만 덮어쓰면 `startDate`는 여전히 `defaultPeriod`를 따릅니다. `null`을 넣어도 폴백이 적용되므로, 특정 일정만 기간 제한 없이 돌리려면 `defaultPeriod` 자체를 비워야 합니다.
+**우선순위:** 항목에 쓴 값 > 그룹 기본값. `startDate`와 `endDate`는 각각 따로 판정되므로, 위 예시처럼 `endDate`만 덮어쓰면 `startDate`는 그룹 기본값을 따릅니다. 기간을 무제한으로 두려면 해당 값을 `null`로 둡니다.
 
 ### 채널별 선택 전송
 

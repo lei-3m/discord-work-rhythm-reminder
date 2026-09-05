@@ -41,11 +41,7 @@ function getScheduledItems(date = new Date()) {
             entry.enabled === true &&
             entry.days.includes(now.weekday) &&
             entry.time === now.time &&
-            isWithinDateRange(
-                now.date,
-                entry.startDate ?? GLOBAL_SETTINGS.defaultPeriod?.startDate,
-                entry.endDate ?? GLOBAL_SETTINGS.defaultPeriod?.endDate
-            )
+            isWithinDateRange(now.date, entry.startDate, entry.endDate)
     );
 }
 
