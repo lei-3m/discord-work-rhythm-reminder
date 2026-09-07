@@ -2,11 +2,11 @@ export const PERSONAL_SCHEDULE = [
     {
         name: "출근 알림",
         time: "09:00",
-        message:
-            "🌞 **좋은 아침입니다!**\n" +
-            "오늘도 화이팅! 💪\n\n" +
-            "📋 데일리체크\n" +
-            "https://daily-check-lime.vercel.app/#",
+        message: `🌞 **좋은 아침입니다!**
+오늘도 화이팅! 💪
+
+📋 데일리체크
+https://daily-check-lime.vercel.app/`,
     },
     {
         name: "오전 첫 쉬는시간",
