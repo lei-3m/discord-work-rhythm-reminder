@@ -84,6 +84,13 @@ function validateScheduleData(data) {
     if (typeof data.settings.enabled !== "boolean") {
         return "settings.enabled must be a boolean.";
     }
+    if (
+        data.settings.channelOrder !== undefined &&
+        (!Array.isArray(data.settings.channelOrder) ||
+            !data.settings.channelOrder.every((c) => typeof c === "string"))
+    ) {
+        return "settings.channelOrder must be an array of strings.";
+    }
     if (!data.channels || typeof data.channels !== "object" || Array.isArray(data.channels)) {
         return "channels is required and must be an object.";
     }
