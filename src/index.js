@@ -260,6 +260,33 @@ async function sendToAll(env, message, targets) {
     console.log(`Sent to ${urls.length} webhook(s).`);
 }
 
+function timingSafeEqual(a, b) {
+    if (a.length !== b.length) return false;
+
+    let diff = 0;
+
+    for (let i = 0; i < a.length; i++) {
+        diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+
+    return diff === 0;
+}
+
+const PROTECTED_ROUTES = [
+    {pathname: "/api/schedule", method: "GET"},
+    {pathname: "/api/schedule", method: "PUT"},
+    {pathname: "/admin/init", method: "POST"},
+    {pathname: "/test", method: "GET"},
+];
+
+function isAuthorized(url, env) {
+    if (!env.ADMIN_TOKEN) return false;
+
+    const key = url.searchParams.get("key") || "";
+
+    return timingSafeEqual(key, env.ADMIN_TOKEN);
+}
+
 export default {
     async scheduled(controller, env, ctx) {
         const data = await loadScheduleData(env);
@@ -272,6 +299,14 @@ export default {
 
     async fetch(request, env) {
         const url = new URL(request.url);
+
+        const requiresAuth = PROTECTED_ROUTES.some(
+            (route) => route.pathname === url.pathname && route.method === request.method
+        );
+
+        if (requiresAuth && !isAuthorized(url, env)) {
+            return jsonResponse({error: "unauthorized"}, 401);
+        }
 
         if (url.pathname === "/test") {
             await sendToAll(

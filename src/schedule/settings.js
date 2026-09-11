@@ -11,7 +11,7 @@ export const GLOBAL_SETTINGS = {
         personal: {
             enabled: true,
             targets: ["personal"],
-            days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sun"],
+            days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
             startDate: "2026-09-06",
             endDate: null,
         },
