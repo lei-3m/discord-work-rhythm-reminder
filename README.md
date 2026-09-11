@@ -1,14 +1,41 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/09febae6-d3f0-49c6-a6d5-4757de0a172d"
-       alt="image"
-       width="550">
-</p>
-
 # Discord Work Rhythm Reminder
 
 Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전송**하는 서버리스 프로젝트입니다.
 
 출근, 쉬는시간, 점심시간, 스크럼, 퇴근 등 반복되는 업무 일정을 Discord 채널로 자동 안내합니다.
+
+[데모 바로가기](https://discord-break-reminder.soleil666111.workers.dev/)
+
+<!--
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/09febae6-d3f0-49c6-a6d5-4757de0a172d"
+       alt="image"
+       width="550">
+</p>
+-->
+
+<table>
+  <thead>
+    <tr>
+      <th width="33%">알림 목록</th>
+      <th width="33%">알림 수정</th>
+      <th width="33%">디스코드 알림</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <img src="./docs-assets/phone-main.jpg" width="100%" alt="월 달력" />
+      </td>
+      <td align="center">
+        <img src="./docs-assets/phone-add.jpg" width="100%" alt="주간 뷰" />
+      </td>
+      <td align="center">
+        <img src="./docs-assets/phone-discord.jpg" width="100%" alt="상세 뷰" />
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ## ✨ 주요 기능
 
