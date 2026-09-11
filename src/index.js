@@ -1,25 +1,7 @@
-import {
-    GLOBAL_SETTINGS as FILE_SETTINGS,
-    TEAM_SCHEDULE as FILE_TEAM,
-    PERSONAL_SCHEDULE as FILE_PERSONAL,
-    buildSchedule,
-} from "./schedule/index.js";
+import {FILE_SCHEDULE, normalizeSchedule} from "./schedule/index.js";
 
 const KV_KEY = "schedule";
-
-function isValidScheduleData(data) {
-    return (
-        data &&
-        typeof data === "object" &&
-        data.settings &&
-        data.settings.defaults &&
-        data.settings.defaults.team &&
-        data.settings.defaults.personal &&
-        Array.isArray(data.team) &&
-        Array.isArray(data.personal)
-    );
-}
-
+const KV_BACKUP_KEY = "schedule.backup";
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -29,6 +11,8 @@ function jsonResponse(body, status = 200) {
         headers: {"Content-Type": "application/json"},
     });
 }
+
+// ---- new (channel) structure validation ----
 
 function validateScheduleItems(items, label) {
     if (!Array.isArray(items)) {
@@ -51,22 +35,43 @@ function validateScheduleItems(items, label) {
         if (typeof item.message !== "string" || !item.message) {
             return `${where}.message is required and must be a string.`;
         }
+        if (item.enabled !== undefined && typeof item.enabled !== "boolean") {
+            return `${where}.enabled must be a boolean.`;
+        }
         if (item.days !== undefined) {
             if (!Array.isArray(item.days) || !item.days.every((d) => VALID_DAYS.includes(d))) {
                 return `${where}.days must be an array using only ${VALID_DAYS.join("/")}.`;
             }
         }
-        if (item.targets !== undefined) {
-            if (
-                !Array.isArray(item.targets) ||
-                !item.targets.every((t) => typeof t === "string")
-            ) {
-                return `${where}.targets must be an array of strings.`;
-            }
+        if (item.startDate !== undefined && item.startDate !== null && typeof item.startDate !== "string") {
+            return `${where}.startDate must be a string or null.`;
+        }
+        if (item.endDate !== undefined && item.endDate !== null && typeof item.endDate !== "string") {
+            return `${where}.endDate must be a string or null.`;
         }
     }
 
     return null;
+}
+
+function validateChannel(channel, label) {
+    if (!channel || typeof channel !== "object" || Array.isArray(channel)) {
+        return `${label} must be an object.`;
+    }
+    if (typeof channel.enabled !== "boolean") {
+        return `${label}.enabled must be a boolean.`;
+    }
+    if (!Array.isArray(channel.days) || !channel.days.every((d) => VALID_DAYS.includes(d))) {
+        return `${label}.days must be an array using only ${VALID_DAYS.join("/")}.`;
+    }
+    if (channel.startDate !== undefined && channel.startDate !== null && typeof channel.startDate !== "string") {
+        return `${label}.startDate must be a string or null.`;
+    }
+    if (channel.endDate !== undefined && channel.endDate !== null && typeof channel.endDate !== "string") {
+        return `${label}.endDate must be a string or null.`;
+    }
+
+    return validateScheduleItems(channel.items, `${label}.items`);
 }
 
 function validateScheduleData(data) {
@@ -76,19 +81,110 @@ function validateScheduleData(data) {
     if (!data.settings || typeof data.settings !== "object") {
         return "settings is required and must be an object.";
     }
-    if (!Array.isArray(data.team)) {
-        return "team is required and must be an array.";
+    if (typeof data.settings.enabled !== "boolean") {
+        return "settings.enabled must be a boolean.";
     }
-    if (!Array.isArray(data.personal)) {
-        return "personal is required and must be an array.";
+    if (!data.channels || typeof data.channels !== "object" || Array.isArray(data.channels)) {
+        return "channels is required and must be an object.";
     }
 
-    return (
-        validateScheduleItems(data.team, "team") ||
-        validateScheduleItems(data.personal, "personal") ||
-        null
+    const names = Object.keys(data.channels);
+
+    if (names.length === 0) {
+        return "channels must contain at least one channel.";
+    }
+
+    for (const name of names) {
+        const reason = validateChannel(data.channels[name], `channels.${name}`);
+        if (reason) return reason;
+    }
+
+    return null;
+}
+
+function isNewScheduleData(data) {
+    return Boolean(data && typeof data === "object" && data.channels);
+}
+
+// ---- legacy (team/personal + targets) structure support ----
+// Kept only so notifications don't break before /admin/migrate is run.
+
+function isLegacyScheduleData(data) {
+    return Boolean(
+        data &&
+        typeof data === "object" &&
+        data.settings &&
+        data.settings.defaults &&
+        data.settings.defaults.team &&
+        data.settings.defaults.personal &&
+        Array.isArray(data.team) &&
+        Array.isArray(data.personal)
     );
 }
+
+function withLegacyDefaults(items, defaults) {
+    return items.map((item) => ({...defaults, ...item}));
+}
+
+function normalizeLegacySchedule(data) {
+    const combined = [
+        ...withLegacyDefaults(data.team || [], data.settings.defaults.team),
+        ...withLegacyDefaults(data.personal || [], data.settings.defaults.personal),
+    ];
+
+    return combined.flatMap((entry) => {
+        const targets = Array.isArray(entry.targets) ? entry.targets : [];
+
+        return targets.map((target) => ({
+            target,
+            enabled: entry.enabled,
+            days: entry.days,
+            startDate: entry.startDate,
+            endDate: entry.endDate,
+            time: entry.time,
+            name: entry.name,
+            message: entry.message,
+        }));
+    });
+}
+
+function migrateLegacyToChannels(data) {
+    const channels = {};
+    const groups = [
+        {items: data.team || [], defaults: data.settings.defaults.team || {}},
+        {items: data.personal || [], defaults: data.settings.defaults.personal || {}},
+    ];
+
+    for (const {items, defaults} of groups) {
+        const channelNames = Array.isArray(defaults.targets) && defaults.targets.length
+            ? defaults.targets
+            : ["default"];
+
+        for (const channelName of channelNames) {
+            if (!channels[channelName]) {
+                channels[channelName] = {
+                    enabled: defaults.enabled ?? true,
+                    days: defaults.days || [],
+                    startDate: defaults.startDate ?? null,
+                    endDate: defaults.endDate ?? null,
+                    items: [],
+                };
+            }
+
+            for (const item of items) {
+                const {targets, ...rest} = item;
+                channels[channelName].items.push(rest);
+            }
+        }
+    }
+
+    return {
+        settings: {enabled: data.settings.enabled},
+        channels,
+    };
+}
+
+// ---- schedule loading (KV first, file fallback) ----
 
 async function loadScheduleData(env) {
     try {
@@ -98,23 +194,20 @@ async function loadScheduleData(env) {
 
         if (!data) {
             console.log("[schedule] KV 비어있음 → 파일 폴백 사용");
-        } else if (!isValidScheduleData(data)) {
-            console.log("[schedule] KV 데이터 형식 오류 → 파일 폴백 사용");
+        } else if (isNewScheduleData(data) && validateScheduleData(data) === null) {
+            console.log("[schedule] KV(채널 구조)에서 일정 로드");
+            return {settings: data.settings, schedule: normalizeSchedule(data)};
+        } else if (isLegacyScheduleData(data)) {
+            console.log("[schedule] KV(구 구조)에서 일정 로드 — /admin/migrate 실행 권장");
+            return {settings: data.settings, schedule: normalizeLegacySchedule(data)};
         } else {
-            console.log("[schedule] KV에서 일정 로드");
-            return {
-                settings: data.settings,
-                schedule: buildSchedule(data.settings, data.team, data.personal),
-            };
+            console.log("[schedule] KV 데이터 형식 오류 → 파일 폴백 사용");
         }
     } catch (err) {
         console.error("[schedule] KV 읽기 실패 → 파일 폴백 사용:", err);
     }
 
-    return {
-        settings: FILE_SETTINGS,
-        schedule: buildSchedule(FILE_SETTINGS, FILE_TEAM, FILE_PERSONAL),
-    };
+    return {settings: FILE_SCHEDULE.settings, schedule: normalizeSchedule(FILE_SCHEDULE)};
 }
 
 function getKoreanNow(date = new Date()) {
@@ -276,6 +369,7 @@ const PROTECTED_ROUTES = [
     {pathname: "/api/schedule", method: "GET"},
     {pathname: "/api/schedule", method: "PUT"},
     {pathname: "/admin/init", method: "POST"},
+    {pathname: "/admin/migrate", method: "POST"},
     {pathname: "/test", method: "GET"},
 ];
 
@@ -293,7 +387,7 @@ export default {
         const items = getScheduledItems(data, new Date(controller.scheduledTime));
 
         for (const item of items) {
-            ctx.waitUntil(sendToAll(env, item.message, item.targets));
+            ctx.waitUntil(sendToAll(env, item.message, [item.target]));
         }
     },
 
@@ -330,15 +424,49 @@ export default {
                 );
             }
 
-            const payload = {
-                settings: FILE_SETTINGS,
-                team: FILE_TEAM,
-                personal: FILE_PERSONAL,
-            };
-
-            await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(payload));
+            await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(FILE_SCHEDULE));
 
             return new Response("Schedule initialized in KV.");
+        }
+
+        if (url.pathname === "/admin/migrate" && request.method === "POST") {
+            if (!env.SCHEDULE_KV) {
+                return jsonResponse({error: "SCHEDULE_KV binding missing."}, 500);
+            }
+
+            const existing = await env.SCHEDULE_KV.get(KV_KEY, "json");
+
+            if (!existing) {
+                return jsonResponse({error: "KV has no schedule data to migrate."}, 409);
+            }
+
+            if (isNewScheduleData(existing)) {
+                return jsonResponse({error: "Schedule is already in the channel structure."}, 409);
+            }
+
+            if (!isLegacyScheduleData(existing)) {
+                return jsonResponse(
+                    {error: "Existing KV data is not in a recognized legacy structure."},
+                    400
+                );
+            }
+
+            await env.SCHEDULE_KV.put(KV_BACKUP_KEY, JSON.stringify(existing));
+
+            const migrated = migrateLegacyToChannels(existing);
+
+            await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(migrated));
+
+            return jsonResponse({ok: true, channels: Object.keys(migrated.channels)});
+        }
+
+        if (url.pathname === "/api/channels" && request.method === "GET") {
+            try {
+                const webhooks = parseWebhookUrls(env.DISCORD_WEBHOOK_URLS);
+                return jsonResponse(Object.keys(webhooks));
+            } catch (err) {
+                return jsonResponse({error: err.message}, 500);
+            }
         }
 
         if (url.pathname === "/api/schedule" && request.method === "GET") {
@@ -352,11 +480,7 @@ export default {
                 return jsonResponse(data);
             }
 
-            return jsonResponse({
-                settings: FILE_SETTINGS,
-                team: FILE_TEAM,
-                personal: FILE_PERSONAL,
-            });
+            return jsonResponse(FILE_SCHEDULE);
         }
 
         if (url.pathname === "/api/schedule" && request.method === "PUT") {

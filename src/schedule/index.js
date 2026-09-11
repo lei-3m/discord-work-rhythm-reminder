@@ -4,15 +4,29 @@ import {TEAM_SCHEDULE} from "./team.js";
 
 export {GLOBAL_SETTINGS, PERSONAL_SCHEDULE, TEAM_SCHEDULE};
 
-function withDefaults(items, defaults) {
-    return items.map((item) => ({...defaults, ...item}));
-}
+export const FILE_SCHEDULE = {
+    settings: {enabled: GLOBAL_SETTINGS.enabled},
+    channels: {
+        team: {...GLOBAL_SETTINGS.channels.team, items: TEAM_SCHEDULE},
+        personal: {...GLOBAL_SETTINGS.channels.personal, items: PERSONAL_SCHEDULE},
+    },
+};
 
-export function buildSchedule(settings, team, personal) {
-    return [
-        ...withDefaults(team, settings.defaults.team),
-        ...withDefaults(personal, settings.defaults.personal),
-    ];
-}
+export function normalizeSchedule(data) {
+    const list = [];
 
-export const SCHEDULE = buildSchedule(GLOBAL_SETTINGS, TEAM_SCHEDULE, PERSONAL_SCHEDULE);
+    for (const [name, channel] of Object.entries(data.channels || {})) {
+        const base = {
+            enabled: channel.enabled,
+            days: channel.days,
+            startDate: channel.startDate ?? null,
+            endDate: channel.endDate ?? null,
+        };
+
+        for (const item of channel.items || []) {
+            list.push({...base, ...item, target: name});
+        }
+    }
+
+    return list;
+}
