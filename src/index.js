@@ -20,6 +20,76 @@ function isValidScheduleData(data) {
     );
 }
 
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const VALID_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function jsonResponse(body, status = 200) {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: {"Content-Type": "application/json"},
+    });
+}
+
+function validateScheduleItems(items, label) {
+    if (!Array.isArray(items)) {
+        return `${label} must be an array.`;
+    }
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const where = `${label}[${i}]`;
+
+        if (!item || typeof item !== "object") {
+            return `${where} must be an object.`;
+        }
+        if (typeof item.name !== "string" || !item.name) {
+            return `${where}.name is required and must be a string.`;
+        }
+        if (typeof item.time !== "string" || !TIME_RE.test(item.time)) {
+            return `${where}.time must be in HH:MM format.`;
+        }
+        if (typeof item.message !== "string" || !item.message) {
+            return `${where}.message is required and must be a string.`;
+        }
+        if (item.days !== undefined) {
+            if (!Array.isArray(item.days) || !item.days.every((d) => VALID_DAYS.includes(d))) {
+                return `${where}.days must be an array using only ${VALID_DAYS.join("/")}.`;
+            }
+        }
+        if (item.targets !== undefined) {
+            if (
+                !Array.isArray(item.targets) ||
+                !item.targets.every((t) => typeof t === "string")
+            ) {
+                return `${where}.targets must be an array of strings.`;
+            }
+        }
+    }
+
+    return null;
+}
+
+function validateScheduleData(data) {
+    if (!data || typeof data !== "object") {
+        return "Body must be a JSON object.";
+    }
+    if (!data.settings || typeof data.settings !== "object") {
+        return "settings is required and must be an object.";
+    }
+    if (!Array.isArray(data.team)) {
+        return "team is required and must be an array.";
+    }
+    if (!Array.isArray(data.personal)) {
+        return "personal is required and must be an array.";
+    }
+
+    return (
+        validateScheduleItems(data.team, "team") ||
+        validateScheduleItems(data.personal, "personal") ||
+        null
+    );
+}
+
 async function loadScheduleData(env) {
     try {
         if (!env.SCHEDULE_KV) throw new Error("SCHEDULE_KV binding missing");
@@ -234,6 +304,48 @@ export default {
             await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(payload));
 
             return new Response("Schedule initialized in KV.");
+        }
+
+        if (url.pathname === "/api/schedule" && request.method === "GET") {
+            if (!env.SCHEDULE_KV) {
+                return jsonResponse({error: "SCHEDULE_KV binding missing."}, 500);
+            }
+
+            const data = await env.SCHEDULE_KV.get(KV_KEY, "json");
+
+            if (data) {
+                return jsonResponse(data);
+            }
+
+            return jsonResponse({
+                settings: FILE_SETTINGS,
+                team: FILE_TEAM,
+                personal: FILE_PERSONAL,
+            });
+        }
+
+        if (url.pathname === "/api/schedule" && request.method === "PUT") {
+            if (!env.SCHEDULE_KV) {
+                return jsonResponse({error: "SCHEDULE_KV binding missing."}, 500);
+            }
+
+            let data;
+
+            try {
+                data = await request.json();
+            } catch {
+                return jsonResponse({error: "Body must be valid JSON."}, 400);
+            }
+
+            const reason = validateScheduleData(data);
+
+            if (reason) {
+                return jsonResponse({error: reason}, 400);
+            }
+
+            await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(data));
+
+            return jsonResponse({ok: true});
         }
 
         return new Response("Discord break reminder is running.");
