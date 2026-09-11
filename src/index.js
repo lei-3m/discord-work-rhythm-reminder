@@ -1,4 +1,51 @@
-import {GLOBAL_SETTINGS, SCHEDULE} from "./schedule/index.js";
+import {
+    GLOBAL_SETTINGS as FILE_SETTINGS,
+    TEAM_SCHEDULE as FILE_TEAM,
+    PERSONAL_SCHEDULE as FILE_PERSONAL,
+    buildSchedule,
+} from "./schedule/index.js";
+
+const KV_KEY = "schedule";
+
+function isValidScheduleData(data) {
+    return (
+        data &&
+        typeof data === "object" &&
+        data.settings &&
+        data.settings.defaults &&
+        data.settings.defaults.team &&
+        data.settings.defaults.personal &&
+        Array.isArray(data.team) &&
+        Array.isArray(data.personal)
+    );
+}
+
+async function loadScheduleData(env) {
+    try {
+        if (!env.SCHEDULE_KV) throw new Error("SCHEDULE_KV binding missing");
+
+        const data = await env.SCHEDULE_KV.get(KV_KEY, "json");
+
+        if (!data) {
+            console.log("[schedule] KV 비어있음 → 파일 폴백 사용");
+        } else if (!isValidScheduleData(data)) {
+            console.log("[schedule] KV 데이터 형식 오류 → 파일 폴백 사용");
+        } else {
+            console.log("[schedule] KV에서 일정 로드");
+            return {
+                settings: data.settings,
+                schedule: buildSchedule(data.settings, data.team, data.personal),
+            };
+        }
+    } catch (err) {
+        console.error("[schedule] KV 읽기 실패 → 파일 폴백 사용:", err);
+    }
+
+    return {
+        settings: FILE_SETTINGS,
+        schedule: buildSchedule(FILE_SETTINGS, FILE_TEAM, FILE_PERSONAL),
+    };
+}
 
 function getKoreanNow(date = new Date()) {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -29,14 +76,14 @@ function isWithinDateRange(date, startDate, endDate) {
     return true;
 }
 
-function getScheduledItems(date = new Date()) {
-    if (!GLOBAL_SETTINGS.enabled) {
+function getScheduledItems({settings, schedule}, date = new Date()) {
+    if (!settings.enabled) {
         return [];
     }
 
     const now = getKoreanNow(date);
 
-    return SCHEDULE.filter(
+    return schedule.filter(
         (entry) =>
             entry.enabled === true &&
             entry.days.includes(now.weekday) &&
@@ -145,8 +192,8 @@ async function sendToAll(env, message, targets) {
 
 export default {
     async scheduled(controller, env, ctx) {
-        const items = getScheduledItems(new Date(controller.scheduledTime));
-        // console.log(`[cron] ${new Date(controller.scheduledTime).toISOString()} items=${items.length}`);
+        const data = await loadScheduleData(env);
+        const items = getScheduledItems(data, new Date(controller.scheduledTime));
 
         for (const item of items) {
             ctx.waitUntil(sendToAll(env, item.message, item.targets));
@@ -162,6 +209,31 @@ export default {
                 "✅ **테스트 알림입니다!**\nCloudflare 연결이 정상이에요."
             );
             return new Response("Test message sent.");
+        }
+
+        if (url.pathname === "/admin/init" && request.method === "POST") {
+            if (!env.SCHEDULE_KV) {
+                return new Response("SCHEDULE_KV binding missing.", {status: 500});
+            }
+
+            const existing = await env.SCHEDULE_KV.get(KV_KEY);
+
+            if (existing !== null) {
+                return new Response(
+                    "KV already has schedule data. Refusing to overwrite.",
+                    {status: 409}
+                );
+            }
+
+            const payload = {
+                settings: FILE_SETTINGS,
+                team: FILE_TEAM,
+                personal: FILE_PERSONAL,
+            };
+
+            await env.SCHEDULE_KV.put(KV_KEY, JSON.stringify(payload));
+
+            return new Response("Schedule initialized in KV.");
         }
 
         return new Response("Discord break reminder is running.");
