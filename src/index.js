@@ -146,6 +146,7 @@ async function sendToAll(env, message, targets) {
 export default {
     async scheduled(controller, env, ctx) {
         const items = getScheduledItems(new Date(controller.scheduledTime));
+        // console.log(`[cron] ${new Date(controller.scheduledTime).toISOString()} items=${items.length}`);
 
         for (const item of items) {
             ctx.waitUntil(sendToAll(env, item.message, item.targets));
