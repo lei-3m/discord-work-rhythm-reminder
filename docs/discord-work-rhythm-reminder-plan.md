@@ -34,7 +34,7 @@ Discord 업무 리듬 알리미
 ### 비목표
 - 복잡한 일정 관리 서비스 제작
 - 사용자 계정 및 권한 관리
-- 관리자 웹 화면 제공
+- 다중 사용자 지원 (계정, 로그인, 사용자별 데이터 분리)
 - Notion 공지 내용을 직접 읽어오는 기능
 - 휴일 API 연동
 - Discord 명령어를 통한 실시간 설정 변경
@@ -59,7 +59,7 @@ Discord 업무 리듬 알리미
 ## 4. 기능 명세
 
 ### 4.1 예약 알림
-각 알림은 아래 속성을 가진다.
+각 알림은 자신이 속한 채널(4.7) 안에서 아래 속성을 가진다.
 
 ```js
 {
@@ -69,7 +69,7 @@ Discord 업무 리듬 알리미
 }
 ```
 
-`enabled`, `targets`, `days`, `startDate`, `endDate`는 선택 항목이다. 생략하면 그룹 기본값(4.4)을 따르고, 값을 적으면 그 값이 우선한다.
+`enabled`, `days`, `startDate`, `endDate`는 선택 항목이다. 생략하면 그 알림이 속한 채널의 기본값(4.4)을 따르고, 값을 적으면 그 값이 우선한다. 전송 대상은 별도 필드로 지정하지 않는다 — 알림이 어느 채널 객체 안에 있는지가 곧 전송 대상이다(4.7).
 
 ### 4.2 개별 ON/OFF
 각 일정의 `enabled` 값을 수정해 삭제 없이 켜고 끌 수 있다.
@@ -96,55 +96,65 @@ if (!GLOBAL_SETTINGS.enabled) {
 }
 ```
 
-최상위 `enabled`는 즉시 중단을 위한 스위치이므로 개별 설정을 덮어쓴다. 반면 그룹 기본값(4.4)은 반복 입력을 줄이기 위한 기본값이므로 개별 설정이 우선한다. 두 값의 우선순위 방향이 반대인 점에 유의한다.
+최상위 `enabled`는 즉시 중단을 위한 스위치이므로 개별 설정을 덮어쓴다. 반면 채널 기본값(4.4)은 반복 입력을 줄이기 위한 기본값이므로 개별 설정이 우선한다. 두 값의 우선순위 방향이 반대인 점에 유의한다.
 
-### 4.4 그룹별 기본값
-팀 알림과 개인 알림은 전송 채널, 요일, 운영 기간이 서로 다르다. 이를 알림마다 반복해서 적는 대신 그룹 단위 기본값으로 관리한다.
+### 4.4 채널별 기본값
+알림은 채널(`team`, `personal` 등) 아래에 소속되며, 채널마다 전송 요일과 운영 기간이 다르다. 이를 알림마다 반복해서 적는 대신 채널 단위 기본값으로 관리한다.
 
 ```js
 export const GLOBAL_SETTINGS = {
   enabled: true,
-  defaults: {
+  channels: {
     team: {
       enabled: true,
-      targets: ["team"],
       days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
       startDate: "2026-07-06",
-      endDate: "2026-10-03",
+      endDate: "2026-09-09",
     },
     personal: {
       enabled: true,
-      targets: ["personal"],
-      days: ["Sat", "Sun"],
-      startDate: null,
+      days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      startDate: "2026-09-06",
       endDate: null,
     },
   },
 };
 ```
 
-기본값은 일정 조립 단계에서 각 알림에 주입된다.
+채널 기본값은 그 채널의 `items` 배열에 있는 각 알림에 주입된다.
 
 ```js
-function withDefaults(items, defaults) {
-  return items.map((item) => ({ ...defaults, ...item }));
+function normalizeSchedule(data) {
+  const list = [];
+  for (const [name, channel] of Object.entries(data.channels)) {
+    const base = {
+      enabled: channel.enabled,
+      days: channel.days,
+      startDate: channel.startDate ?? null,
+      endDate: channel.endDate ?? null,
+    };
+    for (const item of channel.items) {
+      list.push({ ...base, ...item, target: name });
+    }
+  }
+  return list;
 }
 ```
 
-개별 알림에 같은 필드가 있으면 그 값이 기본값을 덮어쓴다. 따라서 대부분의 알림은 이름과 시각, 문구만 적으면 되고, 예외적인 알림만 필요한 필드를 직접 지정한다.
+개별 알림에 같은 필드가 있으면 그 값이 채널 기본값을 덮어쓴다. 따라서 대부분의 알림은 이름과 시각, 문구만 적으면 되고, 예외적인 알림만 필요한 필드를 직접 지정한다.
 
 ```js
-// 기본값을 그대로 사용
+// 채널 기본값을 그대로 사용
 { name: "쉬는시간", time: "09:48", message: BREAK_MSG },
 
-// 토요일에만 동작하는 예외
-{ name: "토요 스크럼", time: "10:00", days: ["Sat"], message: "..." },
+// 이 알림만 비활성화
+{ name: "퇴근 알림", time: "18:00", enabled: false, message: "..." },
 ```
 
-초기에는 모든 알림에 기간을 개별로 적었으나, 기간을 연장할 때마다 전체 알림을 수정해야 해 공통 기본값과 개별 예외를 분리했다.
+초기에는 모든 알림에 기간을 개별로 적었으나, 기간을 연장할 때마다 전체 알림을 수정해야 해 공통 기본값과 개별 예외를 분리했다. 이후 채널별 저장 구조(KV, 6장)로 옮기면서 이 기본값도 `settings.js`의 상수에서 KV의 `channels.<이름>` 객체로 이동했다.
 
 ### 4.5 기간 제한
-`startDate`, `endDate`로 특정 기간에만 알림이 동작한다. 값은 그룹 기본값에서 관리하며, 알림마다 다르게 지정할 수도 있다.
+`startDate`, `endDate`로 특정 기간에만 알림이 동작한다. 값은 채널 기본값에서 관리하며, 알림마다 다르게 지정할 수도 있다.
 
 ```js
 startDate: "2026-07-06",
@@ -165,7 +175,7 @@ time: "16:48",
 
 시간은 한국 시간 기준 24시간제 `HH:MM` 형식을 사용한다.
 
-### 4.7 채널별 선택 전송
+### 4.7 채널 구조와 전송 대상
 Cloudflare Secret `DISCORD_WEBHOOK_URLS`에 이름과 웹훅 URL을 객체로 등록한다.
 
 ```json
@@ -176,19 +186,27 @@ Cloudflare Secret `DISCORD_WEBHOOK_URLS`에 이름과 웹훅 URL을 객체로 �
 }
 ```
 
-각 알림은 `targets` 배열로 전송 대상을 지정한다. 생략하면 그룹 기본값을 따른다.
+일정 데이터는 이 이름을 그대로 키로 쓰는 `channels` 객체로 구성된다.
 
-```js
-targets: ["team"]
+```json
+{
+  "settings": { "enabled": true },
+  "channels": {
+    "team": { "enabled": true, "days": ["Mon"], "startDate": null, "endDate": null, "items": [] },
+    "personal": { "enabled": true, "days": ["Sun"], "startDate": null, "endDate": null, "items": [] }
+  }
+}
 ```
 
-등록되지 않은 이름을 지정하면 해당 대상을 건너뛰고 로그에 경고를 남긴다. 오타로 인해 알림이 조용히 누락되는 상황을 방지하기 위한 처리다.
+알림이 어느 채널 객체(`channels.team`, `channels.personal` 등) 안에 들어 있는지가 곧 전송 대상이다. 초기 구현에서는 알림마다 `targets: ["team"]`처럼 전송 대상 배열을 따로 적었지만, 실제로는 한 알림이 여러 채널로 동시에 전송되는 경우가 없었고 채널별로 파일도 이미 나눠 관리하고 있었기 때문에 `targets`는 불필요한 중복이었다. 채널 구조(6장)로 옮기면서 제거했다.
+
+KV 데이터가 손상되어 존재하지 않는 채널 이름으로 전송을 시도하면 해당 대상을 건너뛰고 로그에 경고를 남긴다. 오타로 인해 알림이 조용히 누락되는 상황을 방지하기 위한 처리다.
 
 ```text
 Unknown webhook target: "tema"
 ```
 
-기존 JSON 배열 형식도 계속 동작하도록 호환 처리를 두었다.
+기존 `DISCORD_WEBHOOK_URLS`의 JSON 배열 형식도 계속 동작하도록 호환 처리를 두었다.
 
 ### 4.8 동시간대 다중 알림
 같은 시각에 조건을 만족하는 알림이 여러 개 있으면 모두 전송한다. 팀 스크럼과 개인 스크럼처럼 같은 시각에 서로 다른 채널로 다른 문구를 보내는 경우를 지원하기 위한 동작이다.
@@ -196,9 +214,9 @@ Unknown webhook target: "tema"
 초기 구현은 일정 조회에 `find`를 사용해 조건에 맞는 첫 항목만 반환했다. 이 경우 요일이 겹치는 순간 나머지 알림이 오류 없이 누락되므로 `filter`로 변경했다.
 
 ```js
-const items = SCHEDULE.filter(/* 조건 */);
+const items = schedule.filter(/* 조건 */);
 for (const item of items) {
-  ctx.waitUntil(sendToAll(env, item.message, item.targets));
+  ctx.waitUntil(sendToAll(env, item.message, [item.target]));
 }
 ```
 
@@ -220,7 +238,32 @@ Notion 링크처럼 저장소에 남기고 싶지 않은 값을 설정 파일에
 https://<worker-address>.workers.dev/test
 ```
 
-`/test`는 일정 판별을 거치지 않으므로, 시각·요일·기간 조건이나 `targets` 필터를 검증하려면 실제 일정을 임시로 조정해 확인해야 한다.
+`/test`는 일정 판별을 거치지 않으므로, 시각·요일·기간 조건을 검증하려면 실제 일정을 임시로 조정해 확인해야 한다.
+
+### 4.11 웹 기반 관리 화면
+Worker의 `GET /`는 단일 HTML 관리 화면을 반환한다. 화면 자체는 인증 없이 열리지만, 실제 일정 데이터를 불러오고 저장하려면 관리 토큰을 입력해야 한다(4.12).
+
+화면에서는 채널별 일정 목록을 조회·추가·수정·삭제하고, 채널 ON/OFF·요일·기간을 편집하며, 채널 탭을 길게 눌러 드래그해 표시 순서를 바꿀 수 있다. 순서는 `settings.channelOrder` 배열로 저장되며 알림 발송 로직에는 영향을 주지 않는다. 드래그는 마우스와 터치를 모두 Pointer Events 하나로 처리해 동일하게 동작한다.
+
+변경사항이 있을 때만 저장 바가 나타나며, 저장을 누르면 `PUT /api/schedule`로 전체 데이터를 교체 저장한다. 파일을 직접 열어 수정하지 않아도 되는 것이 목적이므로, 관리 화면과 KV(6장)는 함께 도입했다.
+
+### 4.12 관리 API 인증
+`GET /`와 `GET /api/channels`를 제외한 나머지 API(`/api/schedule`, `/admin/init`, `/admin/migrate`, `/test`)는 쿼리 파라미터 `key`가 Cloudflare Secret `ADMIN_TOKEN`과 일치해야 동작한다. 일치하지 않거나 누락되면 `401 { "error": "unauthorized" }`를 반환한다.
+
+비교는 길이를 먼저 확인한 뒤 문자별로 XOR을 누적하는 방식으로 구현해, 타이밍 차이로 토큰 길이나 내용을 추측하기 어렵게 했다.
+
+```js
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+```
+
+Cron으로 실행되는 `scheduled` 핸들러는 사용자 요청이 아니므로 인증 대상이 아니다.
 
 ## 5. 현재 알림 구성안
 
@@ -250,14 +293,16 @@ Cloudflare Cron Trigger
         │
         │ 매분 실행
         ▼
-Cloudflare Worker
+Cloudflare Worker (scheduled)
         │
-        ├─ 전역 설정(GLOBAL_SETTINGS.enabled) 확인
+        ├─ KV(SCHEDULE_KV)에서 "schedule" 조회
+        │     └─ 없거나 형식이 깨졌으면 src/schedule/ 파일 폴백 사용
+        ├─ 전역 설정(settings.enabled) 확인
         ├─ 현재 한국 시간 확인
-        ├─ 일정 조회 (기본값이 주입된 통합 배열)
+        ├─ 채널 구조를 평탄화(normalizeSchedule)
         ├─ enabled, 요일, 시각, 기간 확인
         ├─ 조건에 맞는 항목 전부 선택
-        └─ 메시지 내 {{변수}} 치환 후 대상 채널로 전송
+        └─ 메시지 내 {{변수}} 치환 후 소속 채널로 전송
         ▼
 Discord Webhook
         │
@@ -266,29 +311,55 @@ Discord Webhook
         └─ test
 ```
 
+```text
+브라우저 (관리자)
+        │
+        │ GET /
+        ▼
+Cloudflare Worker (fetch)
+        │
+        ├─ GET  /               관리 화면(admin-ui.html) 서빙, 인증 불필요
+        ├─ GET  /api/channels   DISCORD_WEBHOOK_URLS 키 이름만 반환, 인증 불필요
+        ├─ GET  /api/schedule   KV 조회(비어 있으면 파일 폴백), ADMIN_TOKEN 필요
+        ├─ PUT  /api/schedule   검증 후 KV 전체 교체 저장, ADMIN_TOKEN 필요
+        ├─ POST /admin/init     파일 데이터를 KV에 최초 저장, ADMIN_TOKEN 필요
+        ├─ POST /admin/migrate  구 구조 KV를 채널 구조로 변환, ADMIN_TOKEN 필요
+        └─ GET  /test           테스트 메시지 전송, ADMIN_TOKEN 필요
+        ▼
+Cloudflare KV (SCHEDULE_KV)
+        ├─ schedule           현재 일정 데이터(채널 구조)
+        └─ schedule.backup    /admin/migrate 실행 시 생성되는 이전 구조 백업
+```
+
 ### 설정 파일 구성
 
 ```text
-src/schedule/
-├── settings.js    전체 ON/OFF, 그룹별 기본값(채널·요일·기간)
-├── team.js        평일 팀 알림 목록
-├── personal.js    주말 개인 알림 목록
-└── index.js       기본값을 주입해 하나의 배열로 조립
+src/
+├── index.js         라우팅, 인증, KV 로드/폴백, cron 처리, 전송
+├── adminUi.js        admin-ui.html을 감싼 배포용 문자열 번들 (직접 수정 안 함)
+├── admin-ui.html     관리 화면 소스 (수정은 항상 이 파일에서)
+└── schedule/
+    ├── settings.js   전체 ON/OFF, 채널별 기본값(요일·기간)
+    ├── team.js       팀 채널 알림 목록(items)
+    ├── personal.js   개인 채널 알림 목록(items)
+    └── index.js      파일 데이터를 채널 구조로 조립(FILE_SCHEDULE), normalizeSchedule로 평탄화
 ```
 
 팀 알림과 개인 알림을 파일 단위로 분리한 이유는 두 가지다. 개인 일정을 수정하다 여러 사람이 보는 팀 알림을 실수로 건드리는 상황을 막을 수 있고, 한쪽만 열어 보면 되므로 수정할 항목을 찾기도 빠르다. 팀 활동이 끝나면 해당 파일의 연결만 끊으면 되는 점도 이점이다.
 
 공통 기본값은 두 파일 중 어느 쪽에도 속하지 않으므로 `settings.js`로 분리했다. 한쪽 파일에 두면 다른 파일이 그 파일을 참조해야 해서, 파일을 나눈 이유가 무의미해진다.
 
-`index.js`는 세 파일을 조립하는 역할만 하며 일상적인 설정 변경에서는 열지 않는다.
+`index.js`(schedule 폴더)는 파일들을 조립하는 역할만 한다. KV가 도입된 이후 이 파일들은 최초 배포 시의 폴백 데이터로만 쓰인다 — 실제 운영 중에는 관리 화면이나 `PUT /api/schedule`로 KV 데이터를 직접 수정하며, 파일은 KV 읽기가 비었거나 실패했을 때의 안전장치로 남는다.
 
 ### 주요 구성 요소
 - **Cloudflare Workers**: 서버리스 실행 환경
+- **Cloudflare KV**: 일정 데이터(`schedule`)와 마이그레이션 백업(`schedule.backup`) 저장
 - **Cron Trigger**: 매분 Worker 호출
 - **JavaScript**: 일정 판별 및 메시지 전송
 - **Discord Webhook**: Discord 채널 메시지 전송
-- **Cloudflare Secret**: 웹훅 URL 및 외부 링크 비공개 저장
-- **schedule/**: 시간, 요일, 기간, 대상 채널, 메시지 관리
+- **Cloudflare Secret**: 웹훅 URL, 외부 링크, 관리 토큰 비공개 저장
+- **schedule/**: KV가 비었을 때 쓰는 폴백 데이터(시간, 요일, 기간, 메시지)
+- **admin-ui.html / adminUi.js**: 브라우저에서 KV 일정을 조회·편집하는 관리 화면
 
 ## 7. 기술 선택 이유
 
@@ -315,10 +386,21 @@ src/schedule/
 ```powershell
 npm install
 npx wrangler login
+npx wrangler kv namespace create SCHEDULE_KV
+# 출력된 id를 wrangler.jsonc의 kv_namespaces에 반영
 npx wrangler secret put DISCORD_WEBHOOK_URLS
 npx wrangler secret put NOTION_URL
+npx wrangler secret put ADMIN_TOKEN
 npm run deploy
 ```
+
+배포 직후에는 KV가 비어 있으므로 `src/schedule/` 파일 데이터가 폴백으로 쓰인다. KV에 실제 데이터를 채우려면 한 번 호출한다.
+
+```text
+POST https://<worker>.workers.dev/admin/init?key=<ADMIN_TOKEN>
+```
+
+이미 KV에 값이 있으면 `409`로 거부해 실수로 덮어쓰지 않는다.
 
 ### 설정 변경 후 재배포
 
@@ -326,7 +408,28 @@ npm run deploy
 npm run deploy
 ```
 
-기존 Worker를 삭제할 필요 없이 같은 주소에 새 코드가 반영된다.
+기존 Worker를 삭제할 필요 없이 같은 주소에 새 코드가 반영된다. 다만 일정 자체는 대부분 재배포 없이 관리 화면(4.11)이나 `PUT /api/schedule`로 KV를 직접 수정해 반영한다.
+
+### 관리 화면 수정 후 재배포
+
+`src/admin-ui.html`을 고친 뒤 번들을 재생성하고 배포한다.
+
+```powershell
+npm run build:admin-ui
+npm run deploy
+```
+
+`adminUi.js`는 `admin-ui.html`을 JSON 문자열로 감싼 결과물이므로 직접 편집하지 않고, 항상 이 스크립트로 재생성한다.
+
+### 구 구조 KV를 채널 구조로 전환
+
+`targets` 필드를 쓰던 이전 버전에서 이미 `/admin/init`으로 KV를 초기화했다면 한 번 변환한다.
+
+```text
+POST https://<worker>.workers.dev/admin/migrate?key=<ADMIN_TOKEN>
+```
+
+변환 전 원본은 `schedule.backup` 키에 그대로 보관되며, 이미 채널 구조면 `409`로 거부한다.
 
 ### 웹훅 변경
 
@@ -342,26 +445,23 @@ npx wrangler secret put DISCORD_WEBHOOK_URLS
 npx wrangler tail
 ```
 
-전송 실패, 알 수 없는 대상 이름, 일정 미매칭 여부를 실시간으로 확인할 수 있다.
+전송 실패, 알 수 없는 대상 이름, 일정 미매칭, KV 읽기 성공/실패(파일 폴백 여부)를 실시간으로 확인할 수 있다.
 
 ## 9. 향후 개선 계획
 
 ### 9.1 알림 그룹 세분화
 현재는 팀과 개인 두 그룹으로 나뉜다. 향후 출근, 휴식, 식사, 회의, 퇴근 등 목적별로도 묶어 선택적으로 제어한다.
 
-### 9.2 웹 기반 관리 화면
-설정 파일을 직접 수정하지 않고 브라우저에서 시간, 요일, 기간, ON/OFF를 관리한다.
-
-### 9.3 공휴일 제외
+### 9.2 공휴일 제외
 대한민국 공휴일 데이터와 연동해 평일이어도 공휴일이면 알림을 보내지 않는다.
 
-### 9.4 Notion 연동
+### 9.3 Notion 연동
 아침 알림에서 링크만 제공하는 대신, Notion API를 통해 당일 공지 내용을 요약해 Discord에 표시한다.
 
-### 9.5 실행 이력 및 오류 알림
+### 9.4 실행 이력 및 오류 알림
 전송 성공·실패 이력을 저장하고, 웹훅 오류 발생 시 관리자 채널에 알린다.
 
-### 9.6 설정 예시 파일 분리
+### 9.5 설정 예시 파일 분리
 개인 알림 전용으로 전환하는 시점에 기존 팀 설정을 `schedule.example.js`로 남겨, 다른 사용자가 복사해 사용할 수 있도록 한다.
 
 ## 10. 프로젝트에서 담당한 역할

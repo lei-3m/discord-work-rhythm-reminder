@@ -21,14 +21,18 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 * 📅 요일별 실행
 * 📆 기간(Start/End Date) 설정
 * ✅ 알림별 ON/OFF
-* 📢 여러 Discord Webhook 동시 전송
+* 📢 채널 단위로 분리된 여러 Discord Webhook 전송
 * 🔤 환경 변수 기반 메시지 치환(`{{NOTION_URL}}`)
+* 🗂 Cloudflare KV 기반 일정 저장 (파일 수정 없이 API로 변경)
+* 🖥 웹 관리 화면에서 채널·일정 편집 및 탭 순서 드래그 정렬
+* 🔐 토큰 기반 관리 API 인증
 * 🧪 테스트 메시지 전송(`/test`)
 
 ## 🛠 Tech Stack
 
 * JavaScript (ES Modules)
 * Cloudflare Workers
+* Cloudflare Workers KV
 * Cloudflare Cron Triggers
 * Discord Webhook
 
@@ -37,12 +41,18 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 ```text
 .
 ├── src/
-│   ├── index.js          # Worker 진입점
+│   ├── index.js          # Worker 진입점 (라우팅, 인증, KV 로드/폴백, 전송)
+│   ├── adminUi.js         # admin-ui.html을 문자열로 감싼 배포용 번들 (직접 수정 금지)
+│   ├── admin-ui.html      # 관리 화면 소스 (수정은 항상 이 파일에서)
 │   └── schedule/
-│       ├── index.js      # 일정 통합 및 re-export
-│       ├── settings.js   # GLOBAL_SETTINGS
-│       ├── team.js       # 팀 알림 일정
-│       └── personal.js   # 개인 알림 일정
+│       ├── index.js      # 파일 기반 폴백 데이터 조립, 채널 구조 평탄화(normalizeSchedule)
+│       ├── settings.js   # GLOBAL_SETTINGS (전체 ON/OFF, 채널별 기본값)
+│       ├── team.js       # 팀 채널 알림 목록
+│       └── personal.js   # 개인 채널 알림 목록
+├── scripts/
+│   └── build-admin-ui.mjs  # admin-ui.html → adminUi.js 재생성 스크립트
+├── docs/
+│   └── discord-work-rhythm-reminder-plan.md  # 기획서
 ├── package.json
 ├── wrangler.jsonc
 └── README.md
@@ -62,13 +72,37 @@ npm install
 npx wrangler login
 ```
 
-### 3. Discord Webhook 등록
+### 3. KV 네임스페이스 생성
+
+일정 데이터는 Cloudflare KV(`SCHEDULE_KV`)에 저장합니다.
+
+```bash
+npx wrangler kv namespace create SCHEDULE_KV
+```
+
+출력된 `id`를 `wrangler.jsonc`의 `kv_namespaces`에 넣습니다.
+
+```jsonc
+"kv_namespaces": [
+  { "binding": "SCHEDULE_KV", "id": "여기에_생성된_id" }
+]
+```
+
+### 4. Secret 3개 등록
+
+| 시크릿 | 필수 | 설명 |
+|---|---|---|
+| `DISCORD_WEBHOOK_URLS` | ✅ | 채널 이름별 Discord Webhook URL의 JSON 객체 (배열도 허용) |
+| `NOTION_URL` | ✅ | 출근 알림 등 메시지에서 `{{NOTION_URL}}`로 치환되는 값 |
+| `ADMIN_TOKEN` | ✅ | 관리 API(`/api/*`, `/admin/*`, `/test`) 인증에 쓰는 토큰 |
 
 ```bash
 npx wrangler secret put DISCORD_WEBHOOK_URLS
+npx wrangler secret put NOTION_URL
+npx wrangler secret put ADMIN_TOKEN
 ```
 
-예시(JSON 객체 — 채널 이름을 키로 사용)
+`DISCORD_WEBHOOK_URLS` 예시(JSON 객체 — 채널 이름을 키로 사용, 이 키가 곧 전송 대상 채널명)
 
 ```json
 {
@@ -77,30 +111,9 @@ npx wrangler secret put DISCORD_WEBHOOK_URLS
 }
 ```
 
-키 이름은 일정의 `targets`에서 사용합니다. 아래 JSON 배열 형식도 계속 동작하며, 이 경우 모든 웹훅으로 전송됩니다.
+`ADMIN_TOKEN`은 원하는 임의의 문자열이면 됩니다. 이 값을 쿼리 파라미터 `?key=`로 넘겨 관리 API를 호출합니다.
 
-```json
-[
-  "https://discord.com/api/webhooks/...",
-  "https://discord.com/api/webhooks/..."
-]
-```
-
-### 4. 메시지 환경 변수 등록
-
-메시지 안의 링크처럼 저장소에 남기고 싶지 않은 값은 환경 변수로 관리합니다.
-
-```bash
-npx wrangler secret put NOTION_URL
-```
-
-기본 일정 중 **출근 알림**이 `{{NOTION_URL}}`을 사용하므로, 등록하지 않으면 메시지에 `{{NOTION_URL}}` 문자열이 그대로 전송됩니다.
-
-| 변수                     | 필수 | 설정 위치            | 설명                                    |
-|------------------------|----|------------------|---------------------------------------|
-| `DISCORD_WEBHOOK_URLS` | ✅  | 시크릿              | 채널 이름별 Discord Webhook URL의 JSON 객체 (배열도 허용) |
-| `NOTION_URL`           | ✅  | 시크릿              | 출근 알림에 첨부되는 스크럼 노션 문서 주소              |
-| `WEBHOOK_NAME`         | ⬜  | `wrangler.jsonc` | Discord에 표시될 발신자 이름 (기본값: `쉬는시간 알리미`) |
+`WEBHOOK_NAME`(Discord에 표시될 발신자 이름)은 시크릿이 아니라 `wrangler.jsonc`의 `vars`에 있으며 기본값은 `쉬는시간 알리미`입니다.
 
 ### 5. 배포
 
@@ -108,14 +121,101 @@ npx wrangler secret put NOTION_URL
 npm run deploy
 ```
 
+### 6. KV 초기화
+
+배포 직후 KV가 비어 있으면 Worker는 `src/schedule/` 안의 파일 데이터를 폴백으로 사용합니다. KV에 실제 데이터를 채우려면 아래를 한 번 호출합니다. 이미 값이 있으면 거부합니다(실수로 덮어쓰지 않도록).
+
+```text
+POST https://<worker>.workers.dev/admin/init?key=<ADMIN_TOKEN>
+```
+
+## 🖥 관리 화면
+
+```text
+GET https://<worker>.workers.dev/
+```
+
+인증 없이 누구나 화면 자체는 열립니다. 화면에 뜨는 토큰 입력창에 `ADMIN_TOKEN`을 넣어야 실제 일정 데이터를 불러오고 저장할 수 있습니다(토큰은 브라우저 메모리에만 있고 저장되지 않으므로, 새로고침하면 다시 입력해야 합니다).
+
+화면에서 할 수 있는 것:
+- 채널별 일정 목록 조회·추가·수정·삭제
+- 채널 ON/OFF, 요일, 기간(startDate/endDate) 설정
+- 채널 탭을 길게 눌러 드래그하면 탭 표시 순서 변경(`settings.channelOrder`에 저장, 마우스·터치 모두 지원)
+- 변경사항이 있을 때만 나타나는 저장 바로 한 번에 저장
+
+## 📡 API 목록
+
+`key` 표시가 있는 항목은 `?key=<ADMIN_TOKEN>` 쿼리 파라미터가 반드시 필요합니다. 누락되거나 틀리면 `401 {"error":"unauthorized"}`.
+
+| 메서드 | 경로 | 인증 | 설명 |
+|---|---|---|---|
+| GET | `/` | ❌ | 관리 화면(HTML) 서빙 |
+| GET | `/test` | ✅ | 등록된 모든 웹훅으로 테스트 메시지 전송 |
+| GET | `/api/channels` | ❌ | `DISCORD_WEBHOOK_URLS`의 채널 이름 목록만 반환 (URL은 절대 포함 안 함) |
+| GET | `/api/schedule` | ✅ | KV에 저장된 일정 JSON 반환. KV가 비어 있으면 파일 폴백 데이터 반환 |
+| PUT | `/api/schedule` | ✅ | 본문 JSON을 검증 후 KV에 전체 교체 저장. 형식이 틀리면 `400 {"error":"사유"}` |
+| POST | `/admin/init` | ✅ | 파일 데이터를 KV에 최초 저장. 이미 값이 있으면 `409`로 거부 |
+| POST | `/admin/migrate` | ✅ | 구 구조(`team`/`personal` + `targets`) KV 데이터를 채널 구조로 변환. 원본은 `schedule.backup` 키에 보관. 이미 새 구조면 `409` |
+
+## ⚙️ 일정 데이터 구조 (채널 단위)
+
+KV에 저장되는(그리고 `PUT /api/schedule`가 받는) 형태는 다음과 같습니다. 채널 키 이름이 곧 `DISCORD_WEBHOOK_URLS`의 전송 대상이며, `targets` 필드는 더 이상 쓰지 않습니다.
+
+```json
+{
+  "settings": {
+    "enabled": true,
+    "channelOrder": ["personal", "team"]
+  },
+  "channels": {
+    "team": {
+      "enabled": true,
+      "days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      "startDate": "2026-07-06",
+      "endDate": "2026-09-09",
+      "items": [
+        { "name": "출근 알림", "time": "09:00", "message": "🌞 좋은 아침입니다!" }
+      ]
+    },
+    "personal": {
+      "enabled": true,
+      "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      "startDate": "2026-09-06",
+      "endDate": null,
+      "items": [
+        { "name": "출근 알림", "time": "09:00", "message": "🌞 좋은 아침입니다!" }
+      ]
+    }
+  }
+}
+```
+
+* `settings.enabled`: 전체 전송 스위치. `false`면 채널·아이템 설정과 무관하게 전송하지 않습니다.
+* `settings.channelOrder`: 관리 화면에서 채널 탭을 보여주는 순서(선택). 알림 발송 로직에는 영향 없습니다.
+* 각 채널은 자기 기본값(`enabled`, `days`, `startDate`, `endDate`)을 가지며, 채널 안의 `items` 각 항목은 같은 필드를 적으면 그 값이 채널 기본값보다 우선합니다.
+* `name`, `time`(`HH:MM`, 한국 시간), `message`는 각 항목 필수. 그 외 필드는 선택.
+
+파일 폴백(`src/schedule/`)을 수정하려면 `settings.js`(채널별 기본값), `team.js`/`personal.js`(각 채널 `items` 배열)를 고치고 재배포합니다. 폴백은 KV 읽기가 실패하거나 비어 있을 때만 쓰입니다 — 배포 후 `/admin/init`을 아직 안 돌렸거나 KV 바인딩 문제가 있어도 알림이 끊기지 않도록 하는 안전장치입니다.
+
+### 구 구조에서 넘어오는 경우
+
+이전에 `/admin/init`으로 초기화한 KV가 `{settings: {defaults: {...}}, team: [...], personal: [...]}` 형태(구 구조, `targets` 사용)라면 Worker는 이를 계속 읽어 알림을 정상적으로 보냅니다. 채널 단위 구조로 옮기려면:
+
+```text
+POST https://<worker>.workers.dev/admin/migrate?key=<ADMIN_TOKEN>
+```
+
+변환 전 원본은 `schedule.backup` 키에 그대로 보관됩니다.
+
 ## 🔤 메시지 템플릿
 
 메시지 안의 `{{변수명}}`은 전송 직전에 같은 이름의 환경 변수 값으로 치환됩니다.
 
-```javascript
+```json
 {
-  name: "출근 알림",
-  message: "📋 스크럼\n{{NOTION_URL}}",
+  "name": "출근 알림",
+  "time": "09:00",
+  "message": "📋 스크럼\n{{NOTION_URL}}"
 }
 ```
 
@@ -127,101 +227,36 @@ npx wrangler secret put MY_LINK
 
 해당 이름의 환경 변수가 없으면 치환되지 않고 `{{MY_LINK}}`가 그대로 남습니다.
 
-## ⚙️ 일정 설정
+## 🖌 관리 화면(admin-ui.html) 수정 흐름
 
-알림은 `src/schedule/` 폴더에서 관리합니다. 팀 알림은 `team.js`, 개인 알림은 `personal.js`, 전역 설정은 `settings.js`에 있고 `index.js`가 이를 합쳐 `SCHEDULE`로 내보냅니다.
+관리 화면은 단일 HTML 파일(`src/admin-ui.html`)로 되어 있고, Worker는 이를 JS 문자열로 감싼 `src/adminUi.js`를 통해 서빙합니다. `adminUi.js`는 직접 편집하지 않습니다 — 백틱(`` ` ``)이나 `${`가 그대로 들어있는 HTML을 템플릿 리터럴로 감싸면 깨지기 때문에, `JSON.stringify`로 안전하게 이스케이프한 결과물입니다.
 
-그룹별 기본값은 `settings.js`의 `GLOBAL_SETTINGS.defaults`에 모여 있고, `index.js`가 이를 `withDefaults(items, defaults)`로 주입합니다. 각 일정은 달라지는 값만 적고, 항목에 있는 값이 기본값보다 우선합니다.
+1. `src/admin-ui.html`을 수정한다.
+2. 번들을 재생성한다.
+   ```bash
+   npm run build:admin-ui
+   ```
+3. `src/adminUi.js`가 갱신됐는지 확인하고(git diff), 필요하면 `npm run dev`로 `GET /`를 열어 확인한다.
+4. 배포한다.
+   ```bash
+   npm run deploy
+   ```
 
-| 그룹                  | 기본값                |
-|---------------------|--------------------|
-| `TEAM_SCHEDULE`     | `defaults.team`     |
-| `PERSONAL_SCHEDULE` | `defaults.personal` |
-
-```javascript
-export const GLOBAL_SETTINGS = {
-  enabled: true, // false면 개별 enabled 값과 무관하게 모든 알림 중단
-  defaults: {
-    team: {
-      enabled: true,
-      targets: ["team"],
-      days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-      startDate: "2026-07-06",
-      endDate: "2026-09-05",
-    },
-    personal: {
-      enabled: true,
-      targets: ["personal"],
-      days: ["Sat", "Sun"],
-      startDate: null, // null이면 기간 제한 없음
-      endDate: null,
-    },
-  },
-};
-```
-
-기본 형태 — 이름, 시각, 메시지만 적습니다.
-
-```javascript
-{
-  name: "출근 알림",
-  time: "09:00",
-  message: "🌞 좋은 아침입니다!"
-}
-```
-
-기본값과 다르게 동작해야 하는 일정에만 해당 필드를 직접 적습니다.
-
-```javascript
-{
-  name: "신입 온보딩 안내",
-  endDate: "2026-07-17", // startDate는 defaults.team 값을 그대로 사용
-  days: ["Mon"],
-  time: "10:00",
-  message: "📗 온보딩 문서를 확인해주세요!"
-}
-```
-
-**우선순위:** 항목에 쓴 값 > 그룹 기본값. `startDate`와 `endDate`는 각각 따로 판정되므로, 위 예시처럼 `endDate`만 덮어쓰면 `startDate`는 그룹 기본값을 따릅니다. 기간을 무제한으로 두려면 해당 값을 `null`로 둡니다.
-
-### 채널별 선택 전송
-
-`targets`에 `DISCORD_WEBHOOK_URLS` 객체의 키를 적으면 해당 웹훅으로만 전송합니다. 생략하면 등록된 모든 웹훅으로 전송합니다.
-
-```javascript
-{
-  name: "팀 스크럼 안내",
-  enabled: true,
-  targets: ["team"], // 생략 시 전체 전송
-  days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-  time: "09:00",
-  message: "📋 스크럼 시작합니다!"
-}
-```
-
-`targets`에 없는 이름을 적으면 그 이름만 건너뛰고 `console.error`로 경고를 남깁니다. 같은 시각에 여러 일정이 있으면 모두 각자의 `targets`로 전송됩니다.
-
-수정 후에는 다시 배포합니다.
-
-```bash
-npm run deploy
-```
+`src/adminUi.js`를 커밋할 때는 항상 `src/admin-ui.html`과 함께 커밋합니다 — 소스와 번들이 어긋나면 다음 사람이 번들만 보고 잘못된 곳을 고치게 됩니다.
 
 ## 🧪 테스트
 
-배포된 Worker 주소 뒤에 `/test`를 붙이면 테스트 메시지를 전송합니다.
-
 ```text
-https://<worker>.workers.dev/test
+GET https://<worker>.workers.dev/test?key=<ADMIN_TOKEN>
 ```
+
+등록된 모든 웹훅으로 테스트 메시지를 전송합니다.
 
 ## 📌 향후 계획
 
-* 알림 그룹별 ON/OFF
-* 채널별 선택 전송
 * Notion API 연동
 * 공휴일 자동 제외
-* 웹 기반 설정 화면
+* 실행 이력 및 오류 알림
 
 ## 💡 개발 배경
 
@@ -229,7 +264,7 @@ https://<worker>.workers.dev/test
 
 로컬 프로그램 대신 Cloudflare Workers를 사용하여 **컴퓨터가 꺼져 있어도** 알림이 계속 동작하도록 구현했습니다.
 
-또한 일정별 활성화, 기간 제한, 다중 Discord 채널 전송 등을 지원해 개인 및 팀 프로젝트에서 함께 사용할 수 있도록 설계했습니다.
+또한 채널 단위 일정 관리, KV 기반 저장, 웹 관리 화면을 통해 파일을 직접 고치지 않고도 개인 및 팀 알림을 함께 운영할 수 있도록 설계했습니다.
 
 ## License
 

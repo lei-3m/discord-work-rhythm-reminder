@@ -6,7 +6,8 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "secret": "wrangler secret put DISCORD_WEBHOOK_URLS"
+    "secret": "wrangler secret put DISCORD_WEBHOOK_URLS",
+    "build:admin-ui": "node scripts/build-admin-ui.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.24.3"
