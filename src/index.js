@@ -1,4 +1,5 @@
 import {FILE_SCHEDULE, normalizeSchedule} from "./schedule/index.js";
+import {ADMIN_UI_HTML} from "./adminUi.js";
 
 const KV_KEY = "schedule";
 const KV_BACKUP_KEY = "schedule.backup";
@@ -407,6 +408,12 @@ export default {
 
         if (requiresAuth && !isAuthorized(url, env)) {
             return jsonResponse({error: "unauthorized"}, 401);
+        }
+
+        if (url.pathname === "/" && request.method === "GET") {
+            return new Response(ADMIN_UI_HTML, {
+                headers: {"Content-Type": "text/html; charset=utf-8"},
+            });
         }
 
         if (url.pathname === "/test") {
