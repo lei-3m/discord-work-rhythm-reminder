@@ -66,17 +66,31 @@ function encodePNG(width, height, rgba) {
 }
 
 // ---- draw a simple accent-bg / white-circle / clock-hands glyph ----
-// safeRadiusFraction controls how far the white face reaches from center,
-// as a fraction of size. Regular icons use ~0.36 (72% diameter) for a
-// pleasant fill; maskable icons are capped at 0.40 (80% diameter) so the
-// glyph survives being cropped into a circle/squircle/rounded-square by
-// the OS, per the maskable-icon safe-zone spec.
+//
+// The white clock face is always confined to a circle of radius
+// `faceFraction * size`, centered on the canvas. Every icon uses the same
+// 0.4 fraction (80% diameter) — the maskable-icon safe zone — so the glyph
+// survives being cropped into a circle/squircle/rounded-square by an OS
+// launcher, AND so every icon (favicon, home-screen, splash) reads as the
+// same design instead of some being a tighter/looser fill than others.
+//
+// mode:
+//   "square" - background fills the full canvas edge-to-edge with ACCENT
+//              (opaque). Used for manifest/apple-touch-icon assets, which
+//              the OS itself is responsible for masking (or not, for splash).
+//   "circle" - background is ACCENT only inside an outer disk near the
+//              canvas edge; everything outside that disk is transparent.
+//              Used for the favicon, since browsers never mask favicons —
+//              the round shape has to be baked into the pixels themselves.
 
-function drawClockIcon(size, safeRadiusFraction) {
+const FACE_FRACTION = 0.4;
+
+function drawClockIcon(size, mode) {
     const rgba = Buffer.alloc(size * size * 4);
     const cx = size / 2;
     const cy = size / 2;
-    const R = size * safeRadiusFraction;
+    const R = size * FACE_FRACTION;
+    const outerR = size * 0.49; // circle mode only: edge-to-edge disk, tiny margin to avoid AA clipping
 
     const handHalfWidthV = size * 0.035;
     const handTopY = -R * 0.68; // minute hand: center -> up
@@ -88,17 +102,27 @@ function drawClockIcon(size, safeRadiusFraction) {
         for (let x = 0; x < size; x++) {
             const dx = x + 0.5 - cx;
             const dy = y + 0.5 - cy;
-            let color = ACCENT;
+            const distSq = dx * dx + dy * dy;
 
-            if (dx * dx + dy * dy <= R * R) {
+            let color = ACCENT;
+            let alpha = 0xff;
+
+            if (distSq <= R * R) {
                 color = WHITE;
 
                 const inVerticalHand = Math.abs(dx) <= handHalfWidthV && dy <= 0 && dy >= handTopY;
                 const inHorizontalHand = Math.abs(dy) <= handHalfWidthH && dx >= 0 && dx <= handRightX;
-                const inDot = dx * dx + dy * dy <= dotR * dotR;
+                const inDot = distSq <= dotR * dotR;
 
                 if (inVerticalHand || inHorizontalHand || inDot) {
                     color = ACCENT;
+                }
+            } else if (mode === "circle") {
+                if (distSq <= outerR * outerR) {
+                    color = ACCENT;
+                } else {
+                    color = [0, 0, 0];
+                    alpha = 0;
                 }
             }
 
@@ -106,7 +130,7 @@ function drawClockIcon(size, safeRadiusFraction) {
             rgba[i] = color[0];
             rgba[i + 1] = color[1];
             rgba[i + 2] = color[2];
-            rgba[i + 3] = 0xff;
+            rgba[i + 3] = alpha;
         }
     }
 
@@ -114,20 +138,22 @@ function drawClockIcon(size, safeRadiusFraction) {
 }
 
 const ICON_SPECS = {
-    "apple-touch-icon.png": {size: 180, safeRadiusFraction: 0.36},
-    "icon-192.png": {size: 192, safeRadiusFraction: 0.36},
-    "icon-512.png": {size: 512, safeRadiusFraction: 0.36},
-    // Maskable: glyph confined to the center 80% safe zone (radius = 0.40 * size),
-    // background fills edge-to-edge so any OS mask shape crops cleanly.
-    "icon-512-maskable.png": {size: 512, safeRadiusFraction: 0.4},
+    // Square, opaque, edge-to-edge accent background — the OS applies (or
+    // deliberately doesn't apply, e.g. splash) its own crop on top of these.
+    "apple-touch-icon.png": {size: 180, mode: "square"},
+    "icon-192.png": {size: 192, mode: "square"},
+    "icon-512.png": {size: 512, mode: "square"}, // referenced twice in manifest.json: purpose "any" and "maskable"
+    // Genuinely circular, transparent outside the disk — browsers never mask
+    // favicons themselves, so the round shape has to be baked in here.
+    "favicon.png": {size: 64, mode: "circle"},
 };
 
 const icons = {};
 for (const [name, spec] of Object.entries(ICON_SPECS)) {
-    const rgba = drawClockIcon(spec.size, spec.safeRadiusFraction);
+    const rgba = drawClockIcon(spec.size, spec.mode);
     const png = encodePNG(spec.size, spec.size, rgba);
     icons[name] = png.toString("base64");
-    console.log(`[generate-icons] ${name} (${spec.size}x${spec.size}, ${png.length} bytes)`);
+    console.log(`[generate-icons] ${name} (${spec.size}x${spec.size}, ${spec.mode}, ${png.length} bytes)`);
 }
 
 const out = `// Auto-generated by scripts/generate-icons.mjs — do not edit directly.

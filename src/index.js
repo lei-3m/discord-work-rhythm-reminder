@@ -12,10 +12,13 @@ const WEB_MANIFEST = JSON.stringify({
     display: "standalone",
     background_color: "#F8FAFC",
     theme_color: APP_THEME_COLOR,
+    // icon-512.png is listed twice on purpose: the glyph already respects the
+    // maskable safe zone (center 80%), so the same file serves both purposes
+    // instead of shipping a near-duplicate asset.
     icons: [
         {src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any"},
         {src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any"},
-        {src: "/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable"},
+        {src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable"},
     ],
 });
 
