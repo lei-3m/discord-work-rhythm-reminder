@@ -37,26 +37,26 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
   </tbody>
 </table>
 
-## ✨ 주요 기능
+## ✨️ 주요 기능
 
-* 🌞 출근 알림
-* ☕ 쉬는시간 알림
-* 🍱 점심시간 알림
-* ⏰ 점심 종료 안내
-* 📋 스크럼 링크 안내
-* 🎉 퇴근 알림
-* 📅 요일별 실행
-* 📆 기간(Start/End Date) 설정
-* ✅ 알림별 ON/OFF
-* 📢 채널 단위로 분리된 여러 Discord Webhook 전송
-* 🔤 환경 변수 기반 메시지 치환(`{{NOTION_URL}}`)
-* 🗂 Cloudflare KV 기반 일정 저장 (파일 수정 없이 API로 변경)
-* 🖥 웹 관리 화면에서 채널·일정 편집 및 탭 순서 드래그 정렬
-* 🔐 토큰 기반 관리 API 인증, 브라우저 저장으로 자동 로그인
-* 📲 PWA 지원 — 홈 화면에 추가해 독립 앱처럼 실행, maskable 아이콘
-* 🧪 테스트 메시지 전송(`/test`)
+* 🌞️ 출근 알림
+* ☕️ 쉬는시간 알림
+* 🍱️ 점심시간 알림
+* ⏰️ 점심 종료 안내
+* 📋️ 스크럼 링크 안내
+* 🎉️ 퇴근 알림
+* 📅️ 요일별 실행
+* 📆️ 기간(Start/End Date) 설정
+* ✅️ 알림별 ON/OFF
+* 📢️ 채널 단위로 분리된 여러 Discord Webhook 전송
+* 🔤️ 환경 변수 기반 메시지 치환(`{{NOTION_URL}}`)
+* 🗂️ Cloudflare KV 기반 일정 저장 (파일 수정 없이 API로 변경)
+* 🖥️ 웹 관리 화면에서 채널·일정 편집 및 탭 순서 드래그 정렬
+* 🔐️ 토큰 기반 관리 API 인증, 브라우저 저장으로 자동 로그인
+* 📲️ PWA 지원 — 홈 화면에 추가해 독립 앱처럼 실행, maskable 아이콘
+* 🧪️ 테스트 메시지 전송(`/test`)
 
-## 🛠 Tech Stack
+## 🛠️ Tech Stack
 
 * JavaScript (ES Modules)
 * Cloudflare Workers
@@ -64,7 +64,7 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 * Cloudflare Cron Triggers
 * Discord Webhook
 
-## 📁 프로젝트 구조
+## 📁️ 프로젝트 구조
 
 ```text
 .
@@ -88,7 +88,7 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 └── README.md
 ```
 
-## 🚀 실행 방법
+## 🚀️ 실행 방법
 
 ### 1. 설치
 
@@ -122,9 +122,9 @@ npx wrangler kv namespace create SCHEDULE_KV
 
 | 시크릿 | 필수 | 설명 |
 |---|---|---|
-| `DISCORD_WEBHOOK_URLS` | ✅ | 채널 이름별 Discord Webhook URL의 JSON 객체 (배열도 허용) |
-| `NOTION_URL` | ✅ | 출근 알림 등 메시지에서 `{{NOTION_URL}}`로 치환되는 값 |
-| `ADMIN_TOKEN` | ✅ | 관리 API(`/api/*`, `/admin/*`, `/test`) 인증에 쓰는 토큰 |
+| `DISCORD_WEBHOOK_URLS` | ✅️ | 채널 이름별 Discord Webhook URL의 JSON 객체 (배열도 허용) |
+| `NOTION_URL` | ✅️ | 출근 알림 등 메시지에서 `{{NOTION_URL}}`로 치환되는 값 |
+| `ADMIN_TOKEN` | ✅️ | 관리 API(`/api/*`, `/admin/*`, `/test`) 인증에 쓰는 토큰 |
 
 ```bash
 npx wrangler secret put DISCORD_WEBHOOK_URLS
@@ -159,7 +159,7 @@ npm run deploy
 POST https://<worker>.workers.dev/admin/init?key=<ADMIN_TOKEN>
 ```
 
-## 🖥 관리 화면
+## 🖥️ 관리 화면
 
 ```text
 GET https://<worker>.workers.dev/
@@ -174,21 +174,21 @@ GET https://<worker>.workers.dev/
 - 변경사항이 있을 때만 나타나는 저장 바로 한 번에 저장
 - 설정 메뉴에서 토큰 재설정, 테마 전환, 홈 화면에 추가(PWA 설치, 아래 참고)
 
-## 📡 API 목록
+## 📡️ API 목록
 
 `key` 표시가 있는 항목은 `?key=<ADMIN_TOKEN>` 쿼리 파라미터가 반드시 필요합니다. 누락되거나 틀리면 `401 {"error":"unauthorized"}`.
 
 | 메서드 | 경로 | 인증 | 설명 |
 |---|---|---|---|
-| GET | `/` | ❌ | 관리 화면(HTML) 서빙 |
-| GET | `/manifest.json` | ❌ | PWA 매니페스트(앱 이름·테마색·아이콘 목록) |
-| GET | `/icon-*.png`, `/apple-touch-icon.png`, `/favicon.png` | ❌ | 홈 화면·파비콘용 아이콘 PNG 서빙 |
-| GET | `/test` | ✅ | 등록된 모든 웹훅으로 테스트 메시지 전송 |
-| GET | `/api/channels` | ❌ | `DISCORD_WEBHOOK_URLS`의 채널 이름 목록만 반환 (URL은 절대 포함 안 함) |
-| GET | `/api/schedule` | ✅ | KV에 저장된 일정 JSON 반환. KV가 비어 있으면 파일 폴백 데이터 반환 |
-| PUT | `/api/schedule` | ✅ | 본문 JSON을 검증 후 KV에 전체 교체 저장. 형식이 틀리면 `400 {"error":"사유"}` |
-| POST | `/admin/init` | ✅ | 파일 데이터를 KV에 최초 저장. 이미 값이 있으면 `409`로 거부 |
-| POST | `/admin/migrate` | ✅ | 구 구조(`team`/`personal` + `targets`) KV 데이터를 채널 구조로 변환. 원본은 `schedule.backup` 키에 보관. 이미 새 구조면 `409` |
+| GET | `/` | ❌️ | 관리 화면(HTML) 서빙 |
+| GET | `/manifest.json` | ❌️ | PWA 매니페스트(앱 이름·테마색·아이콘 목록) |
+| GET | `/icon-*.png`, `/apple-touch-icon.png`, `/favicon.png` | ❌️ | 홈 화면·파비콘용 아이콘 PNG 서빙 |
+| GET | `/test` | ✅️ | 등록된 모든 웹훅으로 테스트 메시지 전송 |
+| GET | `/api/channels` | ❌️ | `DISCORD_WEBHOOK_URLS`의 채널 이름 목록만 반환 (URL은 절대 포함 안 함) |
+| GET | `/api/schedule` | ✅️ | KV에 저장된 일정 JSON 반환. KV가 비어 있으면 파일 폴백 데이터 반환 |
+| PUT | `/api/schedule` | ✅️ | 본문 JSON을 검증 후 KV에 전체 교체 저장. 형식이 틀리면 `400 {"error":"사유"}` |
+| POST | `/admin/init` | ✅️ | 파일 데이터를 KV에 최초 저장. 이미 값이 있으면 `409`로 거부 |
+| POST | `/admin/migrate` | ✅️ | 구 구조(`team`/`personal` + `targets`) KV 데이터를 채널 구조로 변환. 원본은 `schedule.backup` 키에 보관. 이미 새 구조면 `409` |
 
 ## ⚙️ 일정 데이터 구조 (채널 단위)
 
@@ -207,7 +207,7 @@ KV에 저장되는(그리고 `PUT /api/schedule`가 받는) 형태는 다음과 
       "startDate": "2026-07-06",
       "endDate": "2026-09-09",
       "items": [
-        { "name": "출근 알림", "time": "09:00", "message": "🌞 좋은 아침입니다!" }
+        { "name": "출근 알림", "time": "09:00", "message": "🌞️ 좋은 아침입니다!" }
       ]
     },
     "personal": {
@@ -216,7 +216,7 @@ KV에 저장되는(그리고 `PUT /api/schedule`가 받는) 형태는 다음과 
       "startDate": "2026-09-06",
       "endDate": null,
       "items": [
-        { "name": "출근 알림", "time": "09:00", "message": "🌞 좋은 아침입니다!" }
+        { "name": "출근 알림", "time": "09:00", "message": "🌞️ 좋은 아침입니다!" }
       ]
     }
   }
@@ -240,7 +240,7 @@ POST https://<worker>.workers.dev/admin/migrate?key=<ADMIN_TOKEN>
 
 변환 전 원본은 `schedule.backup` 키에 그대로 보관됩니다.
 
-## 🔤 메시지 템플릿
+## 🔤️ 메시지 템플릿
 
 메시지 안의 `{{변수명}}`은 전송 직전에 같은 이름의 환경 변수 값으로 치환됩니다.
 
@@ -248,7 +248,7 @@ POST https://<worker>.workers.dev/admin/migrate?key=<ADMIN_TOKEN>
 {
   "name": "출근 알림",
   "time": "09:00",
-  "message": "📋 스크럼\n{{NOTION_URL}}"
+  "message": "📋️ 스크럼\n{{NOTION_URL}}"
 }
 ```
 
@@ -260,7 +260,7 @@ npx wrangler secret put MY_LINK
 
 해당 이름의 환경 변수가 없으면 치환되지 않고 `{{MY_LINK}}`가 그대로 남습니다.
 
-## 🖌 관리 화면(admin-ui.html) 수정 흐름
+## 🖌️ 관리 화면(admin-ui.html) 수정 흐름
 
 관리 화면은 단일 HTML 파일(`src/admin-ui.html`)로 되어 있고, Worker는 이를 JS 문자열로 감싼 `src/adminUi.js`를 통해 서빙합니다. `adminUi.js`는 직접 편집하지 않습니다 — 백틱(`` ` ``)이나 `${`가 그대로 들어있는 HTML을 템플릿 리터럴로 감싸면 깨지기 때문에, `JSON.stringify`로 안전하게 이스케이프한 결과물입니다.
 
@@ -283,7 +283,7 @@ npx wrangler secret put MY_LINK
 npm run build:icons
 ```
 
-## 📲 홈 화면 앱(PWA) 설치
+## 📲️ 홈 화면 앱(PWA) 설치
 
 관리 화면은 홈 화면에 추가하면 주소창 없이 독립된 앱처럼 실행됩니다.
 
@@ -292,7 +292,7 @@ npm run build:icons
 - 설치 유도 배너는 이미 홈 화면 앱으로 실행 중이거나(standalone), 이전에 두 번 닫았으면 자동으로 뜨지 않습니다. 그래도 설정 메뉴의 "홈 화면에 추가"는 항상 눌러 쓸 수 있습니다.
 - 아이콘은 강조색(`#1F7A6D`) 배경에 흰 시계 모양이며, Android의 원형/둥근사각형 아이콘 마스크에 맞춰 중앙 80% 안전영역 안에만 그려져 있습니다(maskable icon). 브라우저 탭 파비콘은 마스킹이 적용되지 않으므로 별도로 픽셀 자체가 원형인 이미지를 사용합니다.
 
-## 🧪 테스트
+## 🧪️ 테스트
 
 ```text
 GET https://<worker>.workers.dev/test?key=<ADMIN_TOKEN>
@@ -300,13 +300,13 @@ GET https://<worker>.workers.dev/test?key=<ADMIN_TOKEN>
 
 등록된 모든 웹훅으로 테스트 메시지를 전송합니다.
 
-## 📌 향후 계획
+## 📌️ 향후 계획
 
 * Notion API 연동
 * 공휴일 자동 제외
 * 실행 이력 및 오류 알림
 
-## 💡 개발 배경
+## 💡️ 개발 배경
 
 장시간 원격 근무 중 쉬는시간과 점심시간을 자주 놓치는 경험에서 시작한 프로젝트입니다.
 

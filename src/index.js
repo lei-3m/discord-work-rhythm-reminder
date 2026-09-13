@@ -458,7 +458,7 @@ export default {
         if (url.pathname === "/test") {
             await sendToAll(
                 env,
-                "✅ **테스트 알림입니다!**\nCloudflare 연결이 정상이에요."
+                "✅️ **테스트 알림입니다!**\nCloudflare 연결이 정상이에요."
             );
             return new Response("Test message sent.");
         }
