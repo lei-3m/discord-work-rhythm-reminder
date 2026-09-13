@@ -848,8 +848,11 @@
         user-select: none;
       }
 
+      /* Width is fixed regardless of content (plain "09:00" vs. a repeat range) so
+         the vertical timeline track/dot in the next column never shifts sideways
+         from row to row — a shorter time just left-aligns with room to spare. */
       .timeline-time-col {
-        width: 48px;
+        width: 78px;
         flex-shrink: 0;
         text-align: left;
         display: flex;
@@ -858,12 +861,8 @@
            into the dot/name next to it. */
         overflow: hidden;
       }
-      /* Repeat items show "04:00~18:00" + "60분마다" — wider column, stacked below. */
-      .timeline-time-col.is-repeat {
-        width: 78px;
-      }
       @media (max-width: 640px) {
-        .timeline-time-col.is-repeat {
+        .timeline-time-col {
           width: 68px;
         }
       }
@@ -3159,9 +3158,9 @@
 
             const metaLineHtml = buildMetaLineHtml(item, chData);
             // Repeat items get a longer label ("04:00~18:00" + "60분마다") that doesn't
-            // fit the plain-time column on one line — stack it into two lines in a
-            // wider column instead of letting it overflow onto the name/dot next to it.
-            const timeColClass = item.repeat ? 'timeline-time-col is-repeat' : 'timeline-time-col';
+            // fit on one line — stack it into two lines. The column itself is a fixed
+            // width regardless of item type (see .timeline-time-col), so the vertical
+            // track/dot in the next column never shifts row to row.
             const timeDisplayClass = item.repeat ? 'time-display is-repeat' : 'time-display';
             const timeDisplayHtml = item.repeat
               ? `<span class="time-range">${escapeHtml(`${item.repeat.startTime}~${item.repeat.endTime}`)}</span><span class="time-interval">${escapeHtml(`${item.repeat.everyMinutes}분마다`)}</span>`
@@ -3170,7 +3169,7 @@
             itemEl.innerHTML = `
               <!-- Main Row: Time on Left, Timeline Dots in Middle, Content Indented -->
               <div class="timeline-row" onclick="handleItemRowClick(${originalIndex}, event)">
-                <div class="${timeColClass}">
+                <div class="timeline-time-col">
                   <div class="${timeDisplayClass}">${timeDisplayHtml}</div>
                 </div>
                 <div class="timeline-track-col">
@@ -3329,21 +3328,26 @@
               <input type="text" class="input-text" id="modal-field-name" value="${escapeHtml(item.name || '')}" oninput="handleModalFieldChange('name', this.value)" placeholder="예: 출근 알림" />
             </div>
 
-            <!-- Time vs. Repeat Toggle -->
+            <!-- Time vs. Repeat Toggle: same override-block pattern as Days/Date Range below,
+                 so a dimmed one-line status stays visible even while the toggle is off. -->
             <div class="edit-field">
-              <div class="override-toggle-row" onclick="toggleModalOverrideFromRow('modal-repeat-toggle-cb')">
-                <span class="override-toggle-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M12 6v6l4 2"></path>
-                  </svg>
-                  매시 반복
-                  <span class="override-hint-badge" id="modal-repeat-hint">${item.repeat ? '(구간 반복)' : '(단일 시각)'}</span>
-                </span>
-                <label class="switch" onclick="event.stopPropagation();" title="구간 반복 토글">
-                  <input type="checkbox" id="modal-repeat-toggle-cb" ${item.repeat ? 'checked' : ''} onchange="handleModalToggleRepeat(this.checked)" />
-                  <span class="switch-slider"></span>
-                </label>
+              <div class="override-block">
+                <div class="override-toggle-row" onclick="toggleModalOverrideFromRow('modal-repeat-toggle-cb')">
+                  <span class="override-toggle-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <path d="M12 6v6l4 2"></path>
+                    </svg>
+                    매시 반복
+                  </span>
+                  <label class="switch" onclick="event.stopPropagation();" title="구간 반복 토글">
+                    <input type="checkbox" id="modal-repeat-toggle-cb" ${item.repeat ? 'checked' : ''} onchange="handleModalToggleRepeat(this.checked)" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="override-sub-input ${item.repeat ? '' : 'is-dimmed'}" id="modal-repeat-status-line">
+                  <span class="override-hint-badge" id="modal-repeat-hint" style="margin-left: 0; font-size: 12px;">${escapeHtml(buildRepeatStatusText(item))}</span>
+                </div>
               </div>
             </div>
 
@@ -3510,6 +3514,23 @@
           updateSavePromptVisibility();
         };
 
+        // Always-visible one-line summary for the repeat toggle (dimmed via
+        // override-sub-input.is-dimmed when off), mirroring the Days/Date pattern.
+        function buildRepeatStatusText(item) {
+          if (item.repeat) {
+            return `매시 반복 · ${item.repeat.startTime}~${item.repeat.endTime} · ${item.repeat.everyMinutes}분마다`;
+          }
+          return '매시 반복 · 사용 안 함';
+        }
+
+        function refreshRepeatStatusLine(item) {
+          const line = document.getElementById('modal-repeat-status-line');
+          const hint = document.getElementById('modal-repeat-hint');
+          if (!line || !hint) return;
+          hint.textContent = buildRepeatStatusText(item);
+          line.classList.toggle('is-dimmed', !item.repeat);
+        }
+
         // Modal: Time <-> Repeat toggle
         window.handleModalToggleRepeat = function(isChecked) {
           if (currentModalIndex === null || !scheduleData.channels[activeChannel]) return;
@@ -3519,7 +3540,6 @@
 
           const singleWrap = document.getElementById('modal-time-single-wrap');
           const repeatWrap = document.getElementById('modal-repeat-wrap');
-          const hint = document.getElementById('modal-repeat-hint');
 
           if (isChecked) {
             item.repeat = {
@@ -3530,15 +3550,14 @@
             delete item.time;
             singleWrap.style.display = 'none';
             repeatWrap.style.display = '';
-            hint.textContent = '(구간 반복)';
           } else {
             item.time = (item.repeat && item.repeat.startTime) || '09:00';
             delete item.repeat;
             document.getElementById('modal-field-time').value = item.time;
             singleWrap.style.display = '';
             repeatWrap.style.display = 'none';
-            hint.textContent = '(단일 시각)';
           }
+          refreshRepeatStatusLine(item);
           updateSavePromptVisibility();
         };
 
@@ -3553,6 +3572,7 @@
           } else {
             item.repeat[field] = val;
           }
+          refreshRepeatStatusLine(item);
           updateSavePromptVisibility();
         };
 
