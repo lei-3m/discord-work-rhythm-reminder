@@ -38,6 +38,26 @@ function jsonResponse(body, status = 200) {
 
 // ---- new (channel) structure validation ----
 
+function validateRepeat(repeat, where) {
+    if (!repeat || typeof repeat !== "object") {
+        return `${where} must be an object.`;
+    }
+    if (typeof repeat.startTime !== "string" || !TIME_RE.test(repeat.startTime)) {
+        return `${where}.startTime must be in HH:MM format.`;
+    }
+    if (typeof repeat.endTime !== "string" || !TIME_RE.test(repeat.endTime)) {
+        return `${where}.endTime must be in HH:MM format.`;
+    }
+    if (repeat.startTime > repeat.endTime) {
+        return `${where}.startTime must not be after endTime.`;
+    }
+    if (!Number.isInteger(repeat.everyMinutes) || repeat.everyMinutes <= 0) {
+        return `${where}.everyMinutes must be a positive integer.`;
+    }
+
+    return null;
+}
+
 function validateScheduleItems(items, label) {
     if (!Array.isArray(items)) {
         return `${label} must be an array.`;
@@ -53,8 +73,11 @@ function validateScheduleItems(items, label) {
         if (typeof item.name !== "string" || !item.name) {
             return `${where}.name is required and must be a string.`;
         }
-        if (typeof item.time !== "string" || !TIME_RE.test(item.time)) {
-            return `${where}.time must be in HH:MM format.`;
+        if (item.repeat !== undefined) {
+            const reason = validateRepeat(item.repeat, `${where}.repeat`);
+            if (reason) return reason;
+        } else if (typeof item.time !== "string" || !TIME_RE.test(item.time)) {
+            return `${where}.time must be in HH:MM format, or provide ${where}.repeat instead.`;
         }
         if (typeof item.message !== "string" || !item.message) {
             return `${where}.message is required and must be a string.`;
@@ -270,6 +293,26 @@ function isWithinDateRange(date, startDate, endDate) {
     return true;
 }
 
+function timeToMinutes(hhmm) {
+    const [h, m] = hhmm.split(":").map(Number);
+    return h * 60 + m;
+}
+
+function matchesTime(entry, nowTime) {
+    if (entry.repeat) {
+        const {startTime, endTime, everyMinutes} = entry.repeat;
+        const nowMin = timeToMinutes(nowTime);
+        const startMin = timeToMinutes(startTime);
+        const endMin = timeToMinutes(endTime);
+
+        if (nowMin < startMin || nowMin > endMin) return false;
+
+        return (nowMin - startMin) % everyMinutes === 0;
+    }
+
+    return entry.time === nowTime;
+}
+
 function getScheduledItems({settings, schedule}, date = new Date()) {
     if (!settings.enabled) {
         return [];
@@ -281,7 +324,7 @@ function getScheduledItems({settings, schedule}, date = new Date()) {
         (entry) =>
             entry.enabled === true &&
             entry.days.includes(now.weekday) &&
-            entry.time === now.time &&
+            matchesTime(entry, now.time) &&
             isWithinDateRange(now.date, entry.startDate, entry.endDate)
     );
 }

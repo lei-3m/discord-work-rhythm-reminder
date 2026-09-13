@@ -2542,7 +2542,17 @@
                   if (chData && Array.isArray(chData.items)) {
                     for (let i = 0; i < chData.items.length; i++) {
                       const item = chData.items[i];
-                      if (!item.time || !/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/.test(item.time)) {
+                      const timeRe = /^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/;
+                      if (item.repeat) {
+                        const r = item.repeat;
+                        const repeatOk = typeof r.startTime === 'string' && timeRe.test(r.startTime) &&
+                          typeof r.endTime === 'string' && timeRe.test(r.endTime) &&
+                          r.startTime <= r.endTime &&
+                          Number.isInteger(r.everyMinutes) && r.everyMinutes > 0;
+                        if (!repeatOk) {
+                          throw { isServerValidation: true, error: `channels.${chKey}.items[${i}].repeat must have valid startTime/endTime (HH:MM) and a positive integer everyMinutes.` };
+                        }
+                      } else if (!item.time || !timeRe.test(item.time)) {
                         throw { isServerValidation: true, error: `channels.${chKey}.items[${i}].time must be in HH:MM format.` };
                       }
                     }
@@ -2618,9 +2628,17 @@
               items: Array.isArray(src.items) ? src.items.map(item => {
                 const clean = {
                   name: item.name || '',
-                  time: item.time || '09:00',
                   message: item.message || ''
                 };
+                if (item.repeat && typeof item.repeat === 'object') {
+                  clean.repeat = {
+                    startTime: item.repeat.startTime || '09:00',
+                    endTime: item.repeat.endTime || '18:00',
+                    everyMinutes: parseInt(item.repeat.everyMinutes, 10) || 60
+                  };
+                } else {
+                  clean.time = item.time || '09:00';
+                }
                 if (item.hasOwnProperty('enabled') && item.enabled !== undefined) {
                   clean.enabled = Boolean(item.enabled);
                 }
@@ -3076,12 +3094,12 @@
             return;
           }
 
-          // Always sort by time (HH:MM ascending)
+          // Always sort by time (HH:MM ascending; repeating items sort by their start time)
           const mapped = items.map((item, originalIndex) => ({ item, originalIndex }));
           mapped.sort((a, b) => {
-            const tA = (a.item.time || '00:00').trim();
-            const tB = (b.item.time || '00:00').trim();
-            return tA.localeCompare(tB);
+            const tA = (a.item.repeat ? a.item.repeat.startTime : a.item.time) || '00:00';
+            const tB = (b.item.repeat ? b.item.repeat.startTime : b.item.time) || '00:00';
+            return tA.trim().localeCompare(tB.trim());
           });
 
           mapped.forEach(({ item, originalIndex }, idx) => {
@@ -3094,12 +3112,15 @@
             itemEl.className = `timeline-item ${isDimmed ? 'dimmed' : ''}`;
 
             const metaLineHtml = buildMetaLineHtml(item, chData);
+            const timeLabel = item.repeat
+              ? `${item.repeat.startTime}~${item.repeat.endTime}`
+              : (item.time || '09:00');
 
             itemEl.innerHTML = `
               <!-- Main Row: Time on Left, Timeline Dots in Middle, Content Indented -->
               <div class="timeline-row" onclick="handleItemRowClick(${originalIndex}, event)">
                 <div class="timeline-time-col">
-                  <div class="time-display">${escapeHtml(item.time || '09:00')}</div>
+                  <div class="time-display">${escapeHtml(timeLabel)}</div>
                 </div>
                 <div class="timeline-track-col">
                   ${!isFirstItem ? '<div class="timeline-track-line-top"></div>' : ''}
@@ -3162,6 +3183,19 @@
         // Clean Meta Information (Plain text outside of chips, muted color preserved)
         function buildMetaLineHtml(item, chData) {
           const parts = [];
+
+          // 0. Repeat interval
+          if (item.repeat && item.repeat.everyMinutes) {
+            parts.push(`
+              <span class="meta-text-item">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 6v6l4 2"></path>
+                </svg>
+                <span>${escapeHtml(String(item.repeat.everyMinutes))}분마다 반복</span>
+              </span>
+            `);
+          }
 
           // 1. Days label
           const daysArr = item.hasOwnProperty('days') ? item.days : chData.days;
@@ -3257,8 +3291,26 @@
               <input type="text" class="input-text" id="modal-field-name" value="${escapeHtml(item.name || '')}" oninput="handleModalFieldChange('name', this.value)" placeholder="예: 출근 알림" />
             </div>
 
-            <!-- Time Field: <input type="time"> -->
+            <!-- Time vs. Repeat Toggle -->
             <div class="edit-field">
+              <div class="override-toggle-row" onclick="toggleModalOverrideFromRow('modal-repeat-toggle-cb')">
+                <span class="override-toggle-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 6v6l4 2"></path>
+                  </svg>
+                  매시 반복
+                  <span class="override-hint-badge" id="modal-repeat-hint">${item.repeat ? '(구간 반복)' : '(단일 시각)'}</span>
+                </span>
+                <label class="switch" onclick="event.stopPropagation();" title="구간 반복 토글">
+                  <input type="checkbox" id="modal-repeat-toggle-cb" ${item.repeat ? 'checked' : ''} onchange="handleModalToggleRepeat(this.checked)" />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Single Time Field: <input type="time"> -->
+            <div class="edit-field" id="modal-time-single-wrap" style="${item.repeat ? 'display:none;' : ''}">
               <label class="edit-label">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -3267,6 +3319,25 @@
                 <span>전송 시각 (HH:MM)</span>
               </label>
               <input type="time" class="input-time" id="modal-field-time" value="${escapeHtml(item.time || '09:00')}" oninput="handleModalFieldChange('time', this.value)" />
+            </div>
+
+            <!-- Repeat Range Fields: start/end time + interval -->
+            <div class="edit-field" id="modal-repeat-wrap" style="${item.repeat ? '' : 'display:none;'}">
+              <label class="edit-label">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>반복 구간 (시작~종료)</span>
+              </label>
+              <div class="date-dual-row">
+                <input type="time" class="input-time" id="modal-repeat-start" value="${escapeHtml((item.repeat && item.repeat.startTime) || '09:00')}" onchange="handleModalRepeatChange('startTime', this.value)" />
+                <input type="time" class="input-time" id="modal-repeat-end" value="${escapeHtml((item.repeat && item.repeat.endTime) || '18:00')}" onchange="handleModalRepeatChange('endTime', this.value)" />
+              </div>
+              <label class="edit-label" style="margin-top: 10px;">
+                <span>반복 간격 (분)</span>
+              </label>
+              <input type="number" min="1" step="1" class="input-text" id="modal-repeat-every" value="${escapeHtml(String((item.repeat && item.repeat.everyMinutes) || 60))}" placeholder="예: 60" oninput="handleModalRepeatChange('everyMinutes', this.value)" />
             </div>
 
             <!-- Discord Message & LIVE PREVIEW -->
@@ -3397,6 +3468,52 @@
           items[currentModalIndex][field] = val;
           if (field === 'name') {
             document.getElementById('modal-heading-text').textContent = val ? `${val} 수정` : '알림 수정';
+          }
+          updateSavePromptVisibility();
+        };
+
+        // Modal: Time <-> Repeat toggle
+        window.handleModalToggleRepeat = function(isChecked) {
+          if (currentModalIndex === null || !scheduleData.channels[activeChannel]) return;
+          const items = scheduleData.channels[activeChannel].items;
+          const item = items[currentModalIndex];
+          if (!item) return;
+
+          const singleWrap = document.getElementById('modal-time-single-wrap');
+          const repeatWrap = document.getElementById('modal-repeat-wrap');
+          const hint = document.getElementById('modal-repeat-hint');
+
+          if (isChecked) {
+            item.repeat = {
+              startTime: item.time || '09:00',
+              endTime: '18:00',
+              everyMinutes: 60
+            };
+            delete item.time;
+            singleWrap.style.display = 'none';
+            repeatWrap.style.display = '';
+            hint.textContent = '(구간 반복)';
+          } else {
+            item.time = (item.repeat && item.repeat.startTime) || '09:00';
+            delete item.repeat;
+            document.getElementById('modal-field-time').value = item.time;
+            singleWrap.style.display = '';
+            repeatWrap.style.display = 'none';
+            hint.textContent = '(단일 시각)';
+          }
+          updateSavePromptVisibility();
+        };
+
+        window.handleModalRepeatChange = function(field, val) {
+          if (currentModalIndex === null || !scheduleData.channels[activeChannel]) return;
+          const items = scheduleData.channels[activeChannel].items;
+          const item = items[currentModalIndex];
+          if (!item || !item.repeat) return;
+
+          if (field === 'everyMinutes') {
+            item.repeat.everyMinutes = parseInt(val, 10) || 1;
+          } else {
+            item.repeat[field] = val;
           }
           updateSavePromptVisibility();
         };
