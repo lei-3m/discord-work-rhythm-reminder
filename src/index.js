@@ -325,6 +325,11 @@ function getScheduledItems({settings, schedule}, date = new Date()) {
 
     return schedule.filter(
         (entry) =>
+            // Channel-level emergency stop: same short-circuit shape as the
+            // top-level settings.enabled check above, one level down. An
+            // item's own enabled:true must not be able to keep sending once
+            // its channel is switched off.
+            entry.channelEnabled !== false &&
             entry.enabled === true &&
             entry.days.includes(now.weekday) &&
             matchesTime(entry, now.time) &&

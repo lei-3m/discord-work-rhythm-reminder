@@ -24,7 +24,10 @@ export function normalizeSchedule(data) {
         };
 
         for (const item of channel.items || []) {
-            list.push({...base, ...item, target: name});
+            // channelEnabled is kept separate from the (possibly item-overridden)
+            // `enabled` above so the channel's own switch can act as a hard
+            // stop regardless of any per-item override (see getScheduledItems).
+            list.push({...base, ...item, target: name, channelEnabled: channel.enabled});
         }
     }
 
