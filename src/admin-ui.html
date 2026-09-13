@@ -1736,6 +1736,89 @@
         }
       }
 
+      /* Install-to-Home-Screen Nudge Toast */
+      .install-toast {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+        max-width: 420px;
+        margin: 0 auto;
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-control);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-modal);
+        padding: 12px 12px 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        z-index: 260;
+        opacity: 0;
+        transform: translateY(16px);
+        pointer-events: none;
+        transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        cursor: pointer;
+      }
+      .install-toast.show {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+      .install-toast-body {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+      }
+      .install-toast-icon {
+        font-size: 19px;
+        flex-shrink: 0;
+        line-height: 1;
+      }
+      .install-toast-text {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-main);
+        line-height: 1.4;
+      }
+      .install-toast-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .install-toast-install-btn {
+        height: 32px;
+        padding: 0 13px;
+        border-radius: var(--radius-md);
+        border: none;
+        background-color: var(--accent);
+        color: var(--accent-text);
+        font-size: 12.5px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .install-toast-close {
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        color: var(--text-sub);
+        font-size: 15px;
+        cursor: pointer;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .install-toast-close:hover {
+        background-color: var(--bg-subtle);
+        color: var(--text-main);
+      }
+
       /* Fullscreen Token Input (Memory only) */
       #auth-screen {
         position: fixed;
@@ -2123,6 +2206,18 @@
     <!-- Toast Notification -->
     <div id="toast" class="toast">저장되었습니다</div>
 
+    <!-- Install-to-Home-Screen Nudge Toast -->
+    <div id="install-toast" class="install-toast" role="status" onclick="dismissInstallToast()">
+      <div class="install-toast-body">
+        <span class="install-toast-icon">📱</span>
+        <span class="install-toast-text" id="install-toast-text"></span>
+      </div>
+      <div class="install-toast-actions">
+        <button type="button" class="install-toast-install-btn" id="install-toast-btn" style="display: none;" onclick="event.stopPropagation(); handleInstallClick();">설치</button>
+        <button type="button" class="install-toast-close" onclick="event.stopPropagation(); dismissInstallToast();" aria-label="닫기">✕</button>
+      </div>
+    </div>
+
     <!-- Memory-only Auth Screen -->
     <div id="auth-screen" style="display: none;">
       <div class="auth-box">
@@ -2159,6 +2254,7 @@
         };
 
         const AUTH_STORAGE_KEY = 'discord-bot-auth-token';
+        const INSTALL_TOAST_DISMISSED_KEY = 'install-toast-dismissed';
 
         let memoryToken = '';
         let scheduleData = null;
@@ -2170,6 +2266,20 @@
         let defaultsOpen = false;
         let draggingChannel = null;
         let dragJustHappened = false;
+        let deferredInstallPrompt = null;
+        let installToastAutoHideTimer = null;
+
+        // Android Chrome: capture the native install prompt so we can trigger it
+        // from our own toast button instead of the browser's default mini-infobar.
+        window.addEventListener('beforeinstallprompt', function(e) {
+          e.preventDefault();
+          deferredInstallPrompt = e;
+        });
+
+        window.addEventListener('appinstalled', function() {
+          deferredInstallPrompt = null;
+          try { localStorage.setItem(INSTALL_TOAST_DISMISSED_KEY, '1'); } catch (e) {}
+        });
 
         const CHANNEL_NAMES = {
           team: '팀',
@@ -2412,6 +2522,7 @@
               }
               loadScheduleData(payload, channelsList);
               showToast('성공적으로 저장되었습니다 (데모).');
+              scheduleInstallToast();
               return;
             }
 
@@ -2445,6 +2556,7 @@
               loadScheduleData(payload, channelsList);
             }
             showToast('성공적으로 저장되었습니다.');
+            scheduleInstallToast();
           } catch (err) {
             if (err && err.isServerValidation) {
               showErrorBanner(err.error);
@@ -3529,6 +3641,79 @@
           t.classList.add('show');
           setTimeout(() => t.classList.remove('show'), 2600);
         }
+
+        // ==========================================
+        // Install-to-Home-Screen Nudge
+        // ==========================================
+        function isStandaloneMode() {
+          const mq = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+          return Boolean(mq) || window.navigator.standalone === true;
+        }
+
+        function isIOSDevice() {
+          const ua = window.navigator.userAgent || '';
+          const isIOSUA = /iPad|iPhone|iPod/.test(ua);
+          // iPadOS 13+ reports as "Macintosh" but is touch-capable, unlike a real Mac.
+          const isIPadOS = window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1;
+          return isIOSUA || isIPadOS;
+        }
+
+        function isInstallToastDismissed() {
+          try { return Boolean(localStorage.getItem(INSTALL_TOAST_DISMISSED_KEY)); } catch (e) { return false; }
+        }
+
+        // Called right after a successful save. Fires the toast 1~2s after the
+        // save bar has hidden itself, and only if nothing has re-dirtied the form.
+        function scheduleInstallToast() {
+          if (isStandaloneMode() || isInstallToastDismissed()) return;
+          if (!isIOSDevice() && !deferredInstallPrompt) return; // nothing we can offer
+
+          const delay = 1000 + Math.random() * 1000;
+          setTimeout(function() {
+            if (hasUnsavedChanges()) return; // save bar is back up, stay silent
+            showInstallToast();
+          }, delay);
+        }
+
+        function showInstallToast() {
+          if (isStandaloneMode() || isInstallToastDismissed() || hasUnsavedChanges()) return;
+
+          const el = document.getElementById('install-toast');
+          const textEl = document.getElementById('install-toast-text');
+          const btnEl = document.getElementById('install-toast-btn');
+
+          if (isIOSDevice()) {
+            textEl.textContent = '공유 버튼을 눌러 홈 화면에 추가하세요';
+            btnEl.style.display = 'none';
+          } else if (deferredInstallPrompt) {
+            textEl.textContent = '앱처럼 홈 화면에 설치해보세요';
+            btnEl.style.display = 'inline-flex';
+          } else {
+            return;
+          }
+
+          el.classList.add('show');
+          clearTimeout(installToastAutoHideTimer);
+          installToastAutoHideTimer = setTimeout(dismissInstallToast, 4000);
+        }
+
+        window.dismissInstallToast = function() {
+          const el = document.getElementById('install-toast');
+          el.classList.remove('show');
+          clearTimeout(installToastAutoHideTimer);
+          try { localStorage.setItem(INSTALL_TOAST_DISMISSED_KEY, '1'); } catch (e) {}
+        };
+
+        window.handleInstallClick = async function() {
+          const prompt = deferredInstallPrompt;
+          dismissInstallToast();
+          if (!prompt) return;
+          deferredInstallPrompt = null;
+          try {
+            prompt.prompt();
+            await prompt.userChoice;
+          } catch (e) {}
+        };
 
         // ==========================================
         // Settings Menu & Dropdown Operations
