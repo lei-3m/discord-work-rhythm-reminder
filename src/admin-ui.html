@@ -2034,6 +2034,16 @@
                   </div>
                 </div>
                 <div class="settings-menu-divider"></div>
+                <button type="button" class="settings-menu-item" onclick="openInstallFromMenu()" role="menuitem">
+                  <span class="settings-menu-item-left">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                      <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                    </svg>
+                    <span>홈 화면에 추가</span>
+                  </span>
+                </button>
+                <div class="settings-menu-divider"></div>
                 <button type="button" class="settings-menu-item" onclick="resetAuthToken()" role="menuitem">
                   <span class="settings-menu-item-left">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2268,7 +2278,9 @@
         };
 
         const AUTH_STORAGE_KEY = 'discord-bot-auth-token';
-        const INSTALL_TOAST_DISMISSED_KEY = 'install-toast-dismissed';
+        const INSTALL_DISMISS_COUNT_KEY = 'install-toast-dismiss-count';
+        const INSTALL_SNOOZE_UNTIL_KEY = 'install-toast-snooze-until';
+        const INSTALL_SNOOZE_DAYS = 7;
 
         let memoryToken = '';
         let scheduleData = null;
@@ -2289,9 +2301,9 @@
           deferredInstallPrompt = e;
         });
 
+        // Installing counts as neither a "close" nor a snooze — no dismiss record.
         window.addEventListener('appinstalled', function() {
           deferredInstallPrompt = null;
-          try { localStorage.setItem(INSTALL_TOAST_DISMISSED_KEY, '1'); } catch (e) {}
           const el = document.getElementById('install-toast');
           if (el) el.classList.remove('show');
         });
@@ -2475,6 +2487,7 @@
               activeChannel = channelsList[0] || 'team';
               hideAuthScreen();
               loadScheduleData(JSON.parse(JSON.stringify(SEED_DATA)), channelsList);
+              maybeShowInstallToast();
               return;
             }
 
@@ -2504,6 +2517,7 @@
             try { localStorage.setItem(AUTH_STORAGE_KEY, token); } catch (e) {}
             hideAuthScreen();
             loadScheduleData(scheduleJson, channelsJson);
+            maybeShowInstallToast();
           } catch (err) {
             showAuthPrompt(`연결 오류: ${err.message || 'API 서버를 찾을 수 없습니다.'}`);
           }
@@ -2537,7 +2551,6 @@
               }
               loadScheduleData(payload, channelsList);
               showToast('성공적으로 저장되었습니다 (데모).');
-              scheduleInstallToast();
               return;
             }
 
@@ -2571,7 +2584,6 @@
               loadScheduleData(payload, channelsList);
             }
             showToast('성공적으로 저장되었습니다.');
-            scheduleInstallToast();
           } catch (err) {
             if (err && err.isServerValidation) {
               showErrorBanner(err.error);
@@ -3673,47 +3685,69 @@
           return isIOSUA || isIPadOS;
         }
 
-        function isInstallToastDismissed() {
-          try { return Boolean(localStorage.getItem(INSTALL_TOAST_DISMISSED_KEY)); } catch (e) { return false; }
+        function getInstallDismissCount() {
+          try { return parseInt(localStorage.getItem(INSTALL_DISMISS_COUNT_KEY) || '0', 10) || 0; } catch (e) { return 0; }
         }
 
-        // Called right after a successful save. Fires the toast 1~2s after the
-        // save bar has hidden itself, and only if nothing has re-dirtied the form.
-        function scheduleInstallToast() {
-          if (isStandaloneMode() || isInstallToastDismissed()) return;
-          if (!isIOSDevice() && !deferredInstallPrompt) return; // nothing we can offer
-
-          const delay = 1000 + Math.random() * 1000;
-          setTimeout(function() {
-            if (hasUnsavedChanges()) return; // save bar is back up, stay silent
-            showInstallToast();
-          }, delay);
+        // 1st close = 7-day snooze, 2nd close = permanent. Installing never calls this.
+        function isInstallToastSuppressed() {
+          const count = getInstallDismissCount();
+          if (count >= 2) return true;
+          if (count === 1) {
+            let until = 0;
+            try { until = parseInt(localStorage.getItem(INSTALL_SNOOZE_UNTIL_KEY) || '0', 10) || 0; } catch (e) {}
+            if (Date.now() < until) return true;
+          }
+          return false;
         }
 
-        function showInstallToast() {
-          if (isStandaloneMode() || isInstallToastDismissed() || hasUnsavedChanges()) return;
+        function recordInstallToastDismiss() {
+          const count = getInstallDismissCount() + 1;
+          try {
+            localStorage.setItem(INSTALL_DISMISS_COUNT_KEY, String(count));
+            if (count === 1) {
+              localStorage.setItem(INSTALL_SNOOZE_UNTIL_KEY, String(Date.now() + INSTALL_SNOOZE_DAYS * 24 * 60 * 60 * 1000));
+            }
+          } catch (e) {}
+        }
 
-          const el = document.getElementById('install-toast');
+        // Fills in the toast's text/button for the current platform. Returns
+        // false when there's nothing actionable to show (desktop browser with
+        // no captured install prompt, etc).
+        function renderInstallToastContent() {
           const textEl = document.getElementById('install-toast-text');
           const btnEl = document.getElementById('install-toast-btn');
-
           if (isIOSDevice()) {
             textEl.textContent = '공유 버튼을 눌러 홈 화면에 추가하세요';
             btnEl.style.display = 'none';
-          } else if (deferredInstallPrompt) {
+            return true;
+          }
+          if (deferredInstallPrompt) {
             textEl.textContent = '앱처럼 홈 화면에 설치해보세요';
             btnEl.style.display = 'inline-flex';
-          } else {
-            return;
+            return true;
           }
+          return false;
+        }
 
-          el.classList.add('show');
+        function showInstallToast() {
+          if (!renderInstallToastContent()) return;
+          const el = document.getElementById('install-toast');
+          requestAnimationFrame(function() { el.classList.add('show'); });
+        }
+
+        // Called right after a successful token auth / list load. Shows
+        // immediately (no delay) once standalone/suppression checks pass.
+        function maybeShowInstallToast() {
+          if (isStandaloneMode() || isInstallToastSuppressed()) return;
+          if (!isIOSDevice() && !deferredInstallPrompt) return; // nothing we can offer
+          showInstallToast();
         }
 
         window.dismissInstallToast = function() {
           const el = document.getElementById('install-toast');
           el.classList.remove('show');
-          try { localStorage.setItem(INSTALL_TOAST_DISMISSED_KEY, '1'); } catch (e) {}
+          recordInstallToastDismiss();
         };
 
         window.handleInstallClick = async function() {
@@ -3727,10 +3761,31 @@
             prompt.prompt();
             const choice = await prompt.userChoice;
             if (choice && choice.outcome === 'accepted') {
-              dismissInstallToast();
+              // Installing is not a "close" — hide without recording a dismiss.
+              document.getElementById('install-toast').classList.remove('show');
             }
             // outcome === 'dismissed': leave the toast up so they can retry or close it themselves.
           } catch (e) {}
+        };
+
+        // Settings menu entry point: always available, independent of the
+        // banner's own dismiss/snooze memory.
+        window.openInstallFromMenu = function() {
+          closeSettingsMenu();
+          if (isStandaloneMode()) {
+            showToast('이미 홈 화면에 추가되어 있어요.');
+            return;
+          }
+          if (deferredInstallPrompt) {
+            handleInstallClick();
+            return;
+          }
+          if (renderInstallToastContent()) {
+            const el = document.getElementById('install-toast');
+            requestAnimationFrame(function() { el.classList.add('show'); });
+            return;
+          }
+          showToast('이 브라우저에서는 홈 화면 추가를 지원하지 않아요.');
         };
 
         // ==========================================
@@ -3830,6 +3885,7 @@
           hideAuthScreen();
           loadScheduleData(JSON.parse(JSON.stringify(SEED_DATA)));
           showToast('데모 모드로 시작되었습니다.');
+          maybeShowInstallToast();
         };
 
       })();
