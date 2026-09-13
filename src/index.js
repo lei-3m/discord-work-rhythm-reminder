@@ -10,7 +10,9 @@ const WEB_MANIFEST = JSON.stringify({
     short_name: APP_NAME,
     start_url: "/",
     display: "standalone",
-    background_color: "#F8FAFC",
+    // Matches the icon's own accent background — otherwise the OS splash
+    // screen shows the clock glyph floating on a mismatched gray/white canvas.
+    background_color: APP_THEME_COLOR,
     theme_color: APP_THEME_COLOR,
     // icon-512.png is listed twice on purpose: the glyph already respects the
     // maskable safe zone (center 80%), so the same file serves both purposes
