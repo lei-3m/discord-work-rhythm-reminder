@@ -1927,13 +1927,13 @@
                   </div>
                 </div>
                 <div class="settings-menu-divider"></div>
-                <button type="button" class="settings-menu-item" onclick="openKeyChangeFromMenu()" role="menuitem">
+                <button type="button" class="settings-menu-item" onclick="resetAuthToken()" role="menuitem">
                   <span class="settings-menu-item-left">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                       <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                     </svg>
-                    <span>인증 키 변경</span>
+                    <span>토큰 재설정</span>
                   </span>
                 </button>
               </div>
@@ -2129,7 +2129,7 @@
           </svg>
         </div>
         <h2>인증 토큰 입력</h2>
-        <p>Discord 알림 봇 일정 관리를 위해 접근 토큰(key)을 입력하세요.<br />토큰은 브라우저 메모리에만 보관됩니다.</p>
+        <p>Discord 알림 봇 일정 관리를 위해 접근 토큰(key)을 입력하세요.<br />토큰은 이 브라우저에 저장되어 다음 방문부터 자동으로 로그인됩니다.</p>
         <div class="auth-err-msg" id="auth-err-msg"></div>
         <form onsubmit="submitAuth(event)">
           <input type="password" id="auth-input-key" class="auth-input" placeholder="API KEY 입력" autofocus autocomplete="off" />
@@ -2148,7 +2148,8 @@
           'Mon': '월', 'Tue': '화', 'Wed': '수', 'Thu': '목', 'Fri': '금', 'Sat': '토', 'Sun': '일'
         };
 
-        // Strict in-memory states (no localStorage / sessionStorage)
+        const AUTH_STORAGE_KEY = 'discord-bot-auth-token';
+
         let memoryToken = '';
         let scheduleData = null;
         let originalSnapshot = '';
@@ -2317,7 +2318,14 @@
             memoryToken = key.trim();
             fetchSchedule(memoryToken);
           } else {
-            showAuthPrompt();
+            let storedToken = '';
+            try { storedToken = localStorage.getItem(AUTH_STORAGE_KEY) || ''; } catch (e) {}
+            if (storedToken) {
+              memoryToken = storedToken;
+              fetchSchedule(memoryToken);
+            } else {
+              showAuthPrompt();
+            }
           }
         });
 
@@ -2342,6 +2350,7 @@
             ]);
 
             if (channelsRes.status === 401 || scheduleRes.status === 401) {
+              try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
               showAuthPrompt('인증 실패 (401 unauthorized). 유효한 토큰을 입력해 주세요.');
               return;
             }
@@ -2357,6 +2366,7 @@
             const channelsJson = await channelsRes.json();
             const scheduleJson = await scheduleRes.json();
 
+            try { localStorage.setItem(AUTH_STORAGE_KEY, token); } catch (e) {}
             hideAuthScreen();
             loadScheduleData(scheduleJson, channelsJson);
           } catch (err) {
@@ -2402,6 +2412,7 @@
             });
 
             if (res.status === 401) {
+              try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
               showAuthPrompt('인증 실패 (401 unauthorized). 다시 로그인해 주세요.');
               return;
             }
@@ -3543,8 +3554,10 @@
           toggleTheme();
         };
 
-        window.openKeyChangeFromMenu = function() {
+        window.resetAuthToken = function() {
           closeSettingsMenu();
+          memoryToken = '';
+          try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
           showAuthPrompt();
         };
 
