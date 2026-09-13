@@ -48,8 +48,8 @@ function validateRepeat(repeat, where) {
     if (typeof repeat.endTime !== "string" || !TIME_RE.test(repeat.endTime)) {
         return `${where}.endTime must be in HH:MM format.`;
     }
-    if (repeat.startTime > repeat.endTime) {
-        return `${where}.startTime must not be after endTime.`;
+    if (repeat.startTime >= repeat.endTime) {
+        return `${where}.startTime must be earlier than endTime.`;
     }
     if (!Number.isInteger(repeat.everyMinutes) || repeat.everyMinutes <= 0) {
         return `${where}.everyMinutes must be a positive integer.`;
@@ -72,6 +72,9 @@ function validateScheduleItems(items, label) {
         }
         if (typeof item.name !== "string" || !item.name) {
             return `${where}.name is required and must be a string.`;
+        }
+        if (item.repeat !== undefined && item.time !== undefined) {
+            return `${where} must not have both .time and .repeat — they are mutually exclusive.`;
         }
         if (item.repeat !== undefined) {
             const reason = validateRepeat(item.repeat, `${where}.repeat`);

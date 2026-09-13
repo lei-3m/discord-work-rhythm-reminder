@@ -2547,7 +2547,7 @@
                         const r = item.repeat;
                         const repeatOk = typeof r.startTime === 'string' && timeRe.test(r.startTime) &&
                           typeof r.endTime === 'string' && timeRe.test(r.endTime) &&
-                          r.startTime <= r.endTime &&
+                          r.startTime < r.endTime &&
                           Number.isInteger(r.everyMinutes) && r.everyMinutes > 0;
                         if (!repeatOk) {
                           throw { isServerValidation: true, error: `channels.${chKey}.items[${i}].repeat must have valid startTime/endTime (HH:MM) and a positive integer everyMinutes.` };
@@ -3113,7 +3113,7 @@
 
             const metaLineHtml = buildMetaLineHtml(item, chData);
             const timeLabel = item.repeat
-              ? `${item.repeat.startTime}~${item.repeat.endTime}`
+              ? `${item.repeat.startTime}~${item.repeat.endTime} · ${item.repeat.everyMinutes}분마다`
               : (item.time || '09:00');
 
             itemEl.innerHTML = `
@@ -3183,19 +3183,6 @@
         // Clean Meta Information (Plain text outside of chips, muted color preserved)
         function buildMetaLineHtml(item, chData) {
           const parts = [];
-
-          // 0. Repeat interval
-          if (item.repeat && item.repeat.everyMinutes) {
-            parts.push(`
-              <span class="meta-text-item">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M12 6v6l4 2"></path>
-                </svg>
-                <span>${escapeHtml(String(item.repeat.everyMinutes))}분마다 반복</span>
-              </span>
-            `);
-          }
 
           // 1. Days label
           const daysArr = item.hasOwnProperty('days') ? item.days : chData.days;
