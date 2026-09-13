@@ -648,6 +648,13 @@
         transform: scaleX(1);
       }
 
+      /* Global OFF: channel names dim as an overlay, not a color/state change —
+         re-enabling must restore exactly what was showing before. */
+      #segmented-tabs.global-off .segmented-tab-item {
+        opacity: 0.52;
+        filter: grayscale(0.2);
+      }
+
       /* Single-Row Clean Utility Toolbar for Current Channel */
       .utility-toolbar {
         display: flex;
@@ -673,6 +680,13 @@
       }
       .channel-status-pill:hover {
         background-color: var(--bg-subtle);
+      }
+
+      /* Global OFF: same dim overlay as the tabs — toggle stays clickable and
+         its on/off color underneath is untouched, only faded. */
+      .channel-status-pill.global-off {
+        opacity: 0.52;
+        filter: grayscale(0.2);
       }
 
       .channel-status-dot {
@@ -2949,6 +2963,13 @@
             dot.className = 'global-status-dot halted';
             txt.textContent = '전체 OFF';
           }
+
+          // Global OFF dims channel names + channel toggle too (overlay only —
+          // underlying on/off color and click-ability stay intact for pre-arming).
+          const segTabs = document.getElementById('segmented-tabs');
+          if (segTabs) segTabs.classList.toggle('global-off', !isEnabled);
+          const chPill = document.querySelector('.channel-status-pill');
+          if (chPill) chPill.classList.toggle('global-off', !isEnabled);
         }
 
         window.toggleGlobalEnabled = function(val) {
