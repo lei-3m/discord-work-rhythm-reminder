@@ -1158,6 +1158,23 @@
         font-size: 10px;
         user-select: none;
       }
+      /* Warning chip: item keeps its own enabled:true even though the channel
+         itself is switched off, so it silently keeps sending. Needs to read as
+         a warning, not a normal muted meta chip, or it's easy to miss. */
+      .meta-warning-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--danger);
+        background-color: var(--danger-bg);
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-weight: 600;
+      }
+      .meta-warning-chip svg {
+        color: var(--danger);
+        flex-shrink: 0;
+      }
       .timeline-item.dimmed .item-meta-line,
       .timeline-item.dimmed .meta-text-item,
       .timeline-item.dimmed .meta-text-item svg {
@@ -3255,6 +3272,22 @@
         function buildMetaLineHtml(item, chData) {
           const parts = [];
 
+          // 0. Warning: channel is off but this item has its own enabled:true,
+          // so it keeps sending regardless — surface it instead of letting the
+          // row just look normally "on" with no explanation.
+          if (item.enabled === true && chData.enabled === false) {
+            parts.push(`
+              <span class="meta-warning-chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span>채널 꺼짐 · 개별로 켜짐</span>
+              </span>
+            `);
+          }
+
           // 1. Days label
           const daysArr = item.hasOwnProperty('days') ? item.days : chData.days;
           if (Array.isArray(daysArr) && daysArr.length > 0) {
@@ -3724,9 +3757,22 @@
         // Direct Item Toggle in Timeline list: Smooth in-place transition
         window.toggleItemEnabled = function(index, checked, inputEl) {
           if (!scheduleData || !scheduleData.channels[activeChannel]) return;
-          const items = scheduleData.channels[activeChannel].items;
+          const chData = scheduleData.channels[activeChannel];
+          const items = chData.items;
           if (!items || !items[index]) return;
-          items[index].enabled = checked;
+
+          // If the new value matches the channel's own default, drop the
+          // per-item override entirely instead of pinning it explicitly —
+          // otherwise flipping the switch off and back on (or just matching
+          // the channel's current state) permanently detaches this item from
+          // the channel's ON/OFF switch, which is what caused stale
+          // enabled:true items to keep firing after the channel was turned off.
+          const channelDefault = Boolean(chData.enabled);
+          if (checked === channelDefault) {
+            delete items[index].enabled;
+          } else {
+            items[index].enabled = checked;
+          }
 
           const isGlobalOn = Boolean(scheduleData.settings?.enabled);
           const isDimmed = !isGlobalOn || !checked;
@@ -3735,6 +3781,7 @@
           if (itemEl) {
             itemEl.classList.toggle('dimmed', isDimmed);
           }
+          renderTimelineList();
           updateSavePromptVisibility();
         };
 
