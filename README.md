@@ -52,7 +52,8 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 * 🔤 환경 변수 기반 메시지 치환(`{{NOTION_URL}}`)
 * 🗂 Cloudflare KV 기반 일정 저장 (파일 수정 없이 API로 변경)
 * 🖥 웹 관리 화면에서 채널·일정 편집 및 탭 순서 드래그 정렬
-* 🔐 토큰 기반 관리 API 인증
+* 🔐 토큰 기반 관리 API 인증, 브라우저 저장으로 자동 로그인
+* 📲 PWA 지원 — 홈 화면에 추가해 독립 앱처럼 실행, maskable 아이콘
 * 🧪 테스트 메시지 전송(`/test`)
 
 ## 🛠 Tech Stack
@@ -68,7 +69,8 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 ```text
 .
 ├── src/
-│   ├── index.js          # Worker 진입점 (라우팅, 인증, KV 로드/폴백, 전송)
+│   ├── index.js          # Worker 진입점 (라우팅, 인증, KV 로드/폴백, 전송, manifest.json·아이콘 서빙)
+│   ├── icons.js           # 아이콘 PNG를 base64로 담은 번들 (직접 수정 금지)
 │   ├── adminUi.js         # admin-ui.html을 문자열로 감싼 배포용 번들 (직접 수정 금지)
 │   ├── admin-ui.html      # 관리 화면 소스 (수정은 항상 이 파일에서)
 │   └── schedule/
@@ -77,7 +79,8 @@ Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전�
 │       ├── team.js       # 팀 채널 알림 목록
 │       └── personal.js   # 개인 채널 알림 목록
 ├── scripts/
-│   └── build-admin-ui.mjs  # admin-ui.html → adminUi.js 재생성 스크립트
+│   ├── build-admin-ui.mjs  # admin-ui.html → adminUi.js 재생성 스크립트
+│   └── generate-icons.mjs  # 아이콘 PNG를 직접 인코딩해 src/icons.js 재생성 스크립트
 ├── docs/
 │   └── discord-work-rhythm-reminder-plan.md  # 기획서
 ├── package.json
@@ -162,13 +165,14 @@ POST https://<worker>.workers.dev/admin/init?key=<ADMIN_TOKEN>
 GET https://<worker>.workers.dev/
 ```
 
-인증 없이 누구나 화면 자체는 열립니다. 화면에 뜨는 토큰 입력창에 `ADMIN_TOKEN`을 넣어야 실제 일정 데이터를 불러오고 저장할 수 있습니다(토큰은 브라우저 메모리에만 있고 저장되지 않으므로, 새로고침하면 다시 입력해야 합니다).
+인증 없이 누구나 화면 자체는 열립니다. 화면에 뜨는 토큰 입력창에 `ADMIN_TOKEN`을 넣어야 실제 일정 데이터를 불러오고 저장할 수 있습니다. 입력한 토큰은 브라우저 `localStorage`에 저장되어 다음 방문부터 URL에 `?key=`가 없어도 자동 로그인되며, 설정 메뉴의 "토큰 재설정"을 누르면 저장값을 지우고 다시 입력 화면으로 돌아갑니다.
 
 화면에서 할 수 있는 것:
 - 채널별 일정 목록 조회·추가·수정·삭제
 - 채널 ON/OFF, 요일, 기간(startDate/endDate) 설정
 - 채널 탭을 길게 눌러 드래그하면 탭 표시 순서 변경(`settings.channelOrder`에 저장, 마우스·터치 모두 지원)
 - 변경사항이 있을 때만 나타나는 저장 바로 한 번에 저장
+- 설정 메뉴에서 토큰 재설정, 테마 전환, 홈 화면에 추가(PWA 설치, 아래 참고)
 
 ## 📡 API 목록
 
@@ -177,6 +181,8 @@ GET https://<worker>.workers.dev/
 | 메서드 | 경로 | 인증 | 설명 |
 |---|---|---|---|
 | GET | `/` | ❌ | 관리 화면(HTML) 서빙 |
+| GET | `/manifest.json` | ❌ | PWA 매니페스트(앱 이름·테마색·아이콘 목록) |
+| GET | `/icon-*.png`, `/apple-touch-icon.png`, `/favicon.png` | ❌ | 홈 화면·파비콘용 아이콘 PNG 서빙 |
 | GET | `/test` | ✅ | 등록된 모든 웹훅으로 테스트 메시지 전송 |
 | GET | `/api/channels` | ❌ | `DISCORD_WEBHOOK_URLS`의 채널 이름 목록만 반환 (URL은 절대 포함 안 함) |
 | GET | `/api/schedule` | ✅ | KV에 저장된 일정 JSON 반환. KV가 비어 있으면 파일 폴백 데이터 반환 |
@@ -270,6 +276,21 @@ npx wrangler secret put MY_LINK
    ```
 
 `src/adminUi.js`를 커밋할 때는 항상 `src/admin-ui.html`과 함께 커밋합니다 — 소스와 번들이 어긋나면 다음 사람이 번들만 보고 잘못된 곳을 고치게 됩니다.
+
+아이콘도 같은 원칙입니다. `scripts/generate-icons.mjs`가 그림을 코드로 그려 `src/icons.js`를 생성하므로, 아이콘 디자인(색·모양·크기)을 바꿀 때는 스크립트를 고친 뒤 재생성합니다.
+
+```bash
+npm run build:icons
+```
+
+## 📲 홈 화면 앱(PWA) 설치
+
+관리 화면은 홈 화면에 추가하면 주소창 없이 독립된 앱처럼 실행됩니다.
+
+- **Android(Chrome)**: 방문 시 조건이 맞으면 하단에 설치 유도 배너가 뜨고, "설치" 버튼을 누르면 바로 설치됩니다. 배너를 놓쳤거나 이미 닫았다면 우측 상단 설정 메뉴의 "홈 화면에 추가"를 누르면 됩니다.
+- **iOS(Safari)**: 자동 설치 API가 없어 배너에는 "공유 버튼을 눌러 홈 화면에 추가하세요" 안내만 표시됩니다. 공유 버튼 → 홈 화면에 추가 순서로 직접 진행합니다.
+- 설치 유도 배너는 이미 홈 화면 앱으로 실행 중이거나(standalone), 이전에 두 번 닫았으면 자동으로 뜨지 않습니다. 그래도 설정 메뉴의 "홈 화면에 추가"는 항상 눌러 쓸 수 있습니다.
+- 아이콘은 강조색(`#1F7A6D`) 배경에 흰 시계 모양이며, Android의 원형/둥근사각형 아이콘 마스크에 맞춰 중앙 80% 안전영역 안에만 그려져 있습니다(maskable icon). 브라우저 탭 파비콘은 마스킹이 적용되지 않으므로 별도로 픽셀 자체가 원형인 이미지를 사용합니다.
 
 ## 🧪 테스트
 

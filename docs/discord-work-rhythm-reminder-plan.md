@@ -265,6 +265,28 @@ function timingSafeEqual(a, b) {
 
 Cron으로 실행되는 `scheduled` 핸들러는 사용자 요청이 아니므로 인증 대상이 아니다.
 
+### 4.13 토큰 인증과 자동 로그인
+관리 화면은 최초 접속 시 인증 토큰을 입력받아 브라우저 `localStorage`(`discord-bot-auth-token`)에 저장한다. 이후 방문에는 URL에 `?key=`가 없어도 저장된 토큰으로 자동 로그인되며, 토큰이 만료되었거나(401) 유효하지 않으면 저장값을 지우고 다시 입력 화면으로 돌아간다.
+
+설정 메뉴의 "토큰 재설정"을 누르면 저장된 토큰과 화면 상태를 모두 지우고 즉시 재입력 화면으로 전환된다. 취소 없이 강제로 재인증하도록 만든 이유는, 재설정이 "잘못 입력한 토큰을 고치는" 용도가 아니라 로그아웃에 가까운 동작이기 때문이다.
+
+### 4.14 PWA 지원
+관리 화면을 홈 화면에 추가하면 브라우저 주소창 없이 독립된 앱처럼 실행된다. `GET /manifest.json`이 앱 이름("업무 리듬"), 테마색(`#1F7A6D`), 아이콘 목록을 반환하고, `admin-ui.html`의 head에 `apple-mobile-web-app-capable` 등 전체화면 관련 메타 태그를 넣었다. 아이콘은 강조색 배경에 흰 시계 모양이며, 외부 이미지 툴 없이 `scripts/generate-icons.mjs`가 PNG를 직접 인코딩해 생성한다(6장 참고).
+
+일반 아이콘(`purpose: "any"`)과 별개로, Android처럼 OS가 원형·둥근사각형 등 임의 모양으로 잘라내는 maskable 아이콘(`purpose: "maskable"`)도 함께 등록했다. 시계 글자를 캔버스 중앙 80% 안전영역 안에만 그리고 가장자리는 배경색으로 채워, 어떤 마스크 모양을 씌워도 글자가 잘리지 않게 했다. 브라우저 탭 파비콘은 OS가 마스킹을 해 주지 않으므로 별도로 픽셀 자체가 원형인 이미지(원 바깥은 투명)를 만들어 적용했고, 스플래시 화면 배경색(`background_color`)도 아이콘 배경과 같은 강조색으로 맞춰 아이콘이 회색 배경 위에 떠 보이지 않게 했다.
+
+### 4.15 설치 유도 배너
+토큰 인증에 성공해 일정 목록을 불러온 시점에, 아래 조건을 모두 만족하면 지연 없이 하단에 설치 유도 배너를 띄운다.
+
+- 이미 홈 화면 앱(standalone)으로 실행 중이 아님
+- 배너를 닫은 적이 없거나, 닫은 지 7일이 지남
+- 플랫폼상 보여줄 내용이 있음 — iOS는 안내 문구, `beforeinstallprompt`를 받은 브라우저는 설치 버튼
+
+배너를 첫 번째로 닫으면 7일간 다시 뜨지 않고, 두 번째로 닫으면 이후 영구히 자동으로 뜨지 않는다. 반면 실제로 설치를 완료하면(`appinstalled`) 닫음 기록을 남기지 않는다 — 설치는 "다시 보고 싶지 않다"는 의사 표시가 아니기 때문이다. 자동 노출과는 별도로 설정 메뉴에 "홈 화면에 추가" 항목을 상시 배치해, 배너가 영구히 숨겨진 뒤에도 언제든 수동으로 설치를 다시 시도할 수 있게 했다.
+
+### 4.16 채널 탭 드래그 정렬
+채널 탭을 길게 눌러 드래그하면 표시 순서를 바꿀 수 있다. 순서는 `settings.channelOrder` 배열에 채널 이름을 나열해 저장하며, 알림 발송 로직(6장)에는 전혀 영향을 주지 않는 화면 전용 값이다. 마우스와 터치를 따로 분기하지 않고 Pointer Events 하나로 처리해, PC와 모바일에서 같은 코드로 동일하게 동작한다.
+
 ## 5. 현재 알림 구성안
 
 ### 평일 팀 알림
@@ -319,6 +341,8 @@ Discord Webhook
 Cloudflare Worker (fetch)
         │
         ├─ GET  /               관리 화면(admin-ui.html) 서빙, 인증 불필요
+        ├─ GET  /manifest.json  PWA 매니페스트(이름·테마색·아이콘 목록), 인증 불필요
+        ├─ GET  /icon-*.png     아이콘·파비콘 PNG 서빙(icons.js), 인증 불필요
         ├─ GET  /api/channels   DISCORD_WEBHOOK_URLS 키 이름만 반환, 인증 불필요
         ├─ GET  /api/schedule   KV 조회(비어 있으면 파일 폴백), ADMIN_TOKEN 필요
         ├─ PUT  /api/schedule   검증 후 KV 전체 교체 저장, ADMIN_TOKEN 필요
@@ -335,7 +359,8 @@ Cloudflare KV (SCHEDULE_KV)
 
 ```text
 src/
-├── index.js         라우팅, 인증, KV 로드/폴백, cron 처리, 전송
+├── index.js         라우팅, 인증, KV 로드/폴백, cron 처리, 전송, manifest.json·아이콘 서빙
+├── icons.js          아이콘 PNG를 base64로 담은 번들 (직접 수정 안 함)
 ├── adminUi.js        admin-ui.html을 감싼 배포용 문자열 번들 (직접 수정 안 함)
 ├── admin-ui.html     관리 화면 소스 (수정은 항상 이 파일에서)
 └── schedule/
@@ -343,7 +368,13 @@ src/
     ├── team.js       팀 채널 알림 목록(items)
     ├── personal.js   개인 채널 알림 목록(items)
     └── index.js      파일 데이터를 채널 구조로 조립(FILE_SCHEDULE), normalizeSchedule로 평탄화
+
+scripts/
+├── build-admin-ui.mjs   admin-ui.html -> adminUi.js 재생성
+└── generate-icons.mjs   아이콘 PNG를 직접 인코딩해 src/icons.js 재생성
 ```
+
+관리 화면 빌드 흐름은 한 방향이다: `admin-ui.html`(원본, 사람이 수정) → `npm run build:admin-ui` → `adminUi.js`(Worker가 `GET /` 응답으로 그대로 서빙). `adminUi.js`는 `admin-ui.html`을 JSON 문자열로 감싼 산출물일 뿐이므로 직접 편집하지 않는다. 아이콘도 같은 구조로, `scripts/generate-icons.mjs`(그림을 그리는 코드) → `npm run build:icons` → `src/icons.js`(base64 산출물, Worker가 `/icon-*.png` 등 경로에서 그대로 서빙) 순으로 재생성한다.
 
 팀 알림과 개인 알림을 파일 단위로 분리한 이유는 두 가지다. 개인 일정을 수정하다 여러 사람이 보는 팀 알림을 실수로 건드리는 상황을 막을 수 있고, 한쪽만 열어 보면 되므로 수정할 항목을 찾기도 빠르다. 팀 활동이 끝나면 해당 파일의 연결만 끊으면 되는 점도 이점이다.
 
@@ -360,6 +391,7 @@ src/
 - **Cloudflare Secret**: 웹훅 URL, 외부 링크, 관리 토큰 비공개 저장
 - **schedule/**: KV가 비었을 때 쓰는 폴백 데이터(시간, 요일, 기간, 메시지)
 - **admin-ui.html / adminUi.js**: 브라우저에서 KV 일정을 조회·편집하는 관리 화면
+- **icons.js / generate-icons.mjs**: PWA 아이콘(일반·maskable·파비콘) 생성 및 서빙
 
 ## 7. 기술 선택 이유
 
@@ -420,6 +452,13 @@ npm run deploy
 ```
 
 `adminUi.js`는 `admin-ui.html`을 JSON 문자열로 감싼 결과물이므로 직접 편집하지 않고, 항상 이 스크립트로 재생성한다.
+
+아이콘 디자인(색·모양·크기)을 바꿀 때도 같은 방식으로 재생성한다.
+
+```powershell
+npm run build:icons
+npm run deploy
+```
 
 ### 구 구조 KV를 채널 구조로 전환
 
