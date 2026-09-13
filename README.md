@@ -1,10 +1,14 @@
+<div align="center">
+  <img src="https://discord-break-reminder.soleil666111.workers.dev/icon-circle-512.png?v=2" width="180" alt="업무 리듬 아이콘"/>
+</div>
+
 # Discord Work Rhythm Reminder
 
 Cloudflare Workers를 이용해 **Discord로 업무 리듬 알림을 자동 전송**하는 서버리스 프로젝트입니다.
 
 출근, 쉬는시간, 점심시간, 스크럼, 퇴근 등 반복되는 업무 일정을 Discord 채널로 자동 안내합니다.
 
-[데모 바로가기](https://discord-break-reminder.soleil666111.workers.dev/)
+[데모 바로가기](https://discord-break-reminder.soleil666111.workers.dev/)zja
 
 <!--
 <p align="center">

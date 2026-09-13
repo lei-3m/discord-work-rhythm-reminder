@@ -146,6 +146,10 @@ const ICON_SPECS = {
     // Genuinely circular, transparent outside the disk — browsers never mask
     // favicons themselves, so the round shape has to be baked in here.
     "favicon.png": {size: 64, mode: "circle"},
+    // Same circular treatment at a much higher resolution — for embedding in
+    // README.md, where GitHub strips `style` attributes so a CSS
+    // border-radius can't fake it; the round shape has to be real pixels.
+    "icon-circle-512.png": {size: 512, mode: "circle"},
 };
 
 const icons = {};
