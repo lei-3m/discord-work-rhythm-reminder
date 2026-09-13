@@ -843,7 +843,11 @@
         display: flex;
         align-items: stretch;
         padding: 14px 16px;
-        gap: 12px;
+        /* No shared gap here on purpose — the time->dot and dot->content gaps
+           are tuned separately below (see timeline-time-col/timeline-track-col
+           margin-right) so the time-column's own right-side breathing room can
+           be narrowed independently of the dot->name spacing. */
+        gap: 0;
         cursor: pointer;
         user-select: none;
       }
@@ -860,6 +864,10 @@
         /* Safety net: a label longer than the column should clip, never bleed
            into the dot/name next to it. */
         overflow: hidden;
+        /* Tuned so "text end -> dot" reads close to the row's own left inset
+           (16px above) instead of visibly wider — the track-col below adds
+           ~7px more before the dot itself (dot is centered in a 14px column). */
+        margin-right: 8px;
       }
       @media (max-width: 640px) {
         .timeline-time-col {
@@ -935,6 +943,9 @@
         flex-shrink: 0;
         position: relative;
         align-self: stretch;
+        /* Keeps the previous dot->name spacing now that .timeline-row no
+           longer supplies a shared gap between all three columns. */
+        margin-right: 12px;
       }
 
       .timeline-dot-wrapper {
