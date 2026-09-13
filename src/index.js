@@ -1,5 +1,22 @@
 import {FILE_SCHEDULE, normalizeSchedule} from "./schedule/index.js";
 import {ADMIN_UI_HTML} from "./adminUi.js";
+import {ICONS} from "./icons.js";
+
+const APP_NAME = "업무 리듬";
+const APP_THEME_COLOR = "#1F7A6D";
+
+const WEB_MANIFEST = JSON.stringify({
+    name: APP_NAME,
+    short_name: APP_NAME,
+    start_url: "/",
+    display: "standalone",
+    background_color: "#F8FAFC",
+    theme_color: APP_THEME_COLOR,
+    icons: [
+        {src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any"},
+        {src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any"},
+    ],
+});
 
 const KV_KEY = "schedule";
 const KV_BACKUP_KEY = "schedule.backup";
@@ -413,6 +430,22 @@ export default {
         if (url.pathname === "/" && request.method === "GET") {
             return new Response(ADMIN_UI_HTML, {
                 headers: {"Content-Type": "text/html; charset=utf-8"},
+            });
+        }
+
+        if (url.pathname === "/manifest.json" && request.method === "GET") {
+            return new Response(WEB_MANIFEST, {
+                headers: {"Content-Type": "application/manifest+json; charset=utf-8"},
+            });
+        }
+
+        if (ICONS[url.pathname.slice(1)] && request.method === "GET") {
+            const png = Uint8Array.from(atob(ICONS[url.pathname.slice(1)]), (c) => c.charCodeAt(0));
+            return new Response(png, {
+                headers: {
+                    "Content-Type": "image/png",
+                    "Cache-Control": "public, max-age=604800",
+                },
             });
         }
 
