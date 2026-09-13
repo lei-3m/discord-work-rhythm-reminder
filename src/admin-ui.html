@@ -3397,6 +3397,7 @@
                 <input type="time" class="input-time" id="modal-repeat-start" value="${escapeHtml((item.repeat && item.repeat.startTime) || '09:00')}" onchange="handleModalRepeatChange('startTime', this.value)" />
                 <input type="time" class="input-time" id="modal-repeat-end" value="${escapeHtml((item.repeat && item.repeat.endTime) || '18:00')}" onchange="handleModalRepeatChange('endTime', this.value)" />
               </div>
+              <div style="font-size: 11px; color: var(--text-sub); margin-top: 5px;">종료 시각에도 전송돼요.</div>
               <label class="edit-label" style="margin-top: 10px;">
                 <span>반복 간격 (분)</span>
               </label>
