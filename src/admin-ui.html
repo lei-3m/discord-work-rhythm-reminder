@@ -854,6 +854,18 @@
         text-align: left;
         display: flex;
         align-items: flex-start;
+        /* Safety net: a label longer than the column should clip, never bleed
+           into the dot/name next to it. */
+        overflow: hidden;
+      }
+      /* Repeat items show "04:00~18:00" + "60분마다" — wider column, stacked below. */
+      .timeline-time-col.is-repeat {
+        width: 78px;
+      }
+      @media (max-width: 640px) {
+        .timeline-time-col.is-repeat {
+          width: 68px;
+        }
       }
 
       .time-display {
@@ -875,10 +887,44 @@
         white-space: nowrap;
       }
 
+      /* Repeat variant: two lines (range, then interval) instead of one long line */
+      .time-display.is-repeat {
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 1px;
+      }
+      .time-range {
+        font-size: 12.5px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+        white-space: nowrap;
+      }
+      .time-interval {
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--text-sub);
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+      @media (max-width: 640px) {
+        .time-range {
+          font-size: 11.5px;
+        }
+        .time-interval {
+          font-size: 10px;
+        }
+      }
+
       .timeline-item.dimmed .time-display {
         color: var(--text-dim);
         background: transparent;
         border: none;
+      }
+      .timeline-item.dimmed .time-interval {
+        color: var(--text-dim);
       }
 
       /* Vertical Connected Timeline Track (Accent dot, continuous line through all items) */
@@ -3112,15 +3158,20 @@
             itemEl.className = `timeline-item ${isDimmed ? 'dimmed' : ''}`;
 
             const metaLineHtml = buildMetaLineHtml(item, chData);
-            const timeLabel = item.repeat
-              ? `${item.repeat.startTime}~${item.repeat.endTime} · ${item.repeat.everyMinutes}분마다`
-              : (item.time || '09:00');
+            // Repeat items get a longer label ("04:00~18:00" + "60분마다") that doesn't
+            // fit the plain-time column on one line — stack it into two lines in a
+            // wider column instead of letting it overflow onto the name/dot next to it.
+            const timeColClass = item.repeat ? 'timeline-time-col is-repeat' : 'timeline-time-col';
+            const timeDisplayClass = item.repeat ? 'time-display is-repeat' : 'time-display';
+            const timeDisplayHtml = item.repeat
+              ? `<span class="time-range">${escapeHtml(`${item.repeat.startTime}~${item.repeat.endTime}`)}</span><span class="time-interval">${escapeHtml(`${item.repeat.everyMinutes}분마다`)}</span>`
+              : escapeHtml(item.time || '09:00');
 
             itemEl.innerHTML = `
               <!-- Main Row: Time on Left, Timeline Dots in Middle, Content Indented -->
               <div class="timeline-row" onclick="handleItemRowClick(${originalIndex}, event)">
-                <div class="timeline-time-col">
-                  <div class="time-display">${escapeHtml(timeLabel)}</div>
+                <div class="${timeColClass}">
+                  <div class="${timeDisplayClass}">${timeDisplayHtml}</div>
                 </div>
                 <div class="timeline-track-col">
                   ${!isFirstItem ? '<div class="timeline-track-line-top"></div>' : ''}
